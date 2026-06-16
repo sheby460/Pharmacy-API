@@ -9,6 +9,10 @@ use App\Services\Auth\AuthService;
 
 class AuthController extends Controller
 {
+   public function me()
+   {
+      return response()->json(auth()->user());
+   }
 
 
    public function login(LoginRequest $request, AuthService $service)
