@@ -16,7 +16,7 @@ class AuthController extends Controller
 
 
    public function login(LoginRequest $request, AuthService $service)
-   { dd('reached controller');
+   { 
       return response()->json(
          $service->login($request->validated())
       );
