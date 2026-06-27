@@ -13,9 +13,7 @@ class SupplierController extends Controller
 {
     public function __construct(
         protected SupplierService $supplierService
-    )
-    {
-    }
+    ) {  }
 
     public function index(Request $request): JsonResponse {
         $perPage = (int) $request->get('per_page', 15);

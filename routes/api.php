@@ -14,12 +14,11 @@ Route::group([], function() {
     Route::post('/logout', [AuthController::class, 'logout']);
 });
 
-Route::prefix('suppliers')->group(function () {
-    Route::get('/', [SupplierController::class, 'index']);
-    Route::post('/', [SupplierController::class, 'store']);
-    Route::get('/{id}', [SupplierController::class, 'show']);
-    Route::put('/{id}', [SupplierController::class, 'update']);
-    Route::delete('/{id}', [SupplierController::class, 'destroy']);
-});
-
+ Route::prefix('suppliers')->group(function () {
+        Route::get('/', [SupplierController::class, 'index']);      // GET /api/suppliers
+        Route::post('/', [SupplierController::class, 'store']);     // POST /api/suppliers
+        Route::get('/{id}', [SupplierController::class, 'show']);   // GET /api/suppliers/{id}
+        Route::put('/{id}', [SupplierController::class, 'update']); // PUT /api/suppliers/{id}
+        Route::delete('/{id}', [SupplierController::class, 'destroy']); // DELETE /api/suppliers/{id}
+    });
 
