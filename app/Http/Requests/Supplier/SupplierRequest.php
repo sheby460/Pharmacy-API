@@ -1,7 +1,6 @@
 <?php
 
-namespace App\Http\Requests;
-
+namespace App\Http\Requests\Supplier;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -27,6 +26,7 @@ class SupplierRequest extends FormRequest
             'location' => 'nullable|string','max:255',
             'address' => 'nullable|string','max:255',
             'contacts' => 'nullable|string','max:255',
+            'tax_ID' => 'nullable|string', 'max:255',
         ];
     }
 

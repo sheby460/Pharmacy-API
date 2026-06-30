@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Supplier;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\SupplierRequest;
-use App\Http\Resources\SupplierResource;
+use App\Http\Requests\Supplier\SupplierRequest;
+use App\Http\Resources\Supplier\SupplierResource;
 use App\Services\Supplier\SupplierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +24,7 @@ class SupplierController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Suppliers retrieved successfully.',
-            'data' => SupplierResource::collection($suppliers->items()),
+            'data' =>SupplierResource::collection($suppliers->items()),
             'meta' => [
                 'current_page' => $suppliers->currentPage(),
                 'last_page' => $suppliers->lastPage(),

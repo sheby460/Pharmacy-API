@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string("location")->nullable();
             $table->string("address")->nullable();
             $table->string("contacts")->nullable();
+            $table->string('tax_ID')->nullable();
             $table->timestamps();
 
             $table->index('supplier_name');

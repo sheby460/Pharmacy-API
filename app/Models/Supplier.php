@@ -10,6 +10,7 @@ class Supplier extends Model
     'supplier_name',
     'location',
     'address',
-    'contacts'
+    'contacts',
+    'tax_ID',
    ];
 }
