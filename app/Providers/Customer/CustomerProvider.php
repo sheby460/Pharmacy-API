@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Providers\Costomer;
+namespace App\Providers\Customer;
 
 use Illuminate\Support\ServiceProvider;
 use App\Repositories\Customers\CustomerRepository;
 use App\Repositories\Customers\CustomerRepositoryInterface;
 
-class CostomerProvider extends ServiceProvider
+class CustomerProvider extends ServiceProvider
 {
     /**
      * Register services.

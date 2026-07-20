@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Http\Requests\Costomer;
+namespace App\Http\Requests\Customer;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class CostomerRequest extends FormRequest
+class CustomerRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,7 +22,7 @@ class CostomerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'costomer_name' => 'required|string|max:255',
+            'customer_name' => 'required|string|max:255',
             'address' => 'nullable|string|max:255',
             'contacts' => 'nullable|string|max:255',
         ];

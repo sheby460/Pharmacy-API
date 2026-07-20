@@ -3,9 +3,10 @@
 namespace App\Http\Controllers\Customer;
 use App\Services\CustomerService\CustomerService;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\CustomerRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use App\Http\Resources\Costomer\CustomerResource;
+use App\Http\Resources\Customer\CustomerResource;
 
 class CustomerController extends Controller
 {
@@ -34,7 +35,7 @@ class CustomerController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse {
+    public function store(CustomerRequest $request): JsonResponse {
         
         $customer = $this->customerService->createCustomer(
             $request->validated()
