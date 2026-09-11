@@ -4,6 +4,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Supplier\SupplierController;
 use App\Http\Controllers\Customer\CustomerController;
+use App\Http\Controllers\Category\CategoryController;
+use App\Http\Controllers\SubCategory\SubCategoryController;
+
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -31,4 +34,19 @@ Route::group([], function() {
         Route::delete('/{id}', [CustomerController::class, 'destroy']);
     });
 
+    Route::prefix('categories')->group(function () {
+        Route::get('/', [CategoryController::class, 'index']);      
+        Route::post('/', [CategoryController::class, 'store']);     
+        Route::get('/{id}', [CategoryController::class, 'show']);   
+        Route::put('/{id}', [CategoryController::class, 'update']); 
+        Route::delete('/{id}', [CategoryController::class, 'destroy']);
+    });
+
+   Route::prefix('sub-categories')->group(function () {
+        Route::get('/', [SubCategoryController::class, 'index']);      
+        Route::post('/', [SubCategoryController::class, 'store']);     
+        Route::get('/{id}', [SubCategoryController::class, 'show']);   
+        Route::put('/{id}', [SubCategoryController::class, 'update']); 
+        Route::delete('/{id}', [SubCategoryController::class, 'destroy']);
+    });
 
