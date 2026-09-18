@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers\Customer;
+
 use App\Services\CustomerService\CustomerService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\CustomerRequest;
@@ -12,12 +13,11 @@ class CustomerController extends Controller
 {
     public function __construct(
         protected CustomerService $customerService
-    )
-    {  }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
-       $perPage = (int) $request->get('per_page', 15);
+        $perPage = (int) $request->get('per_page', 15);
         $perPage = min(max($perPage, 1), 100);
 
         $customers = $this->customerService->paginateCustomers($perPage);
@@ -35,8 +35,9 @@ class CustomerController extends Controller
         ]);
     }
 
-    public function store(CustomerRequest $request): JsonResponse {
-        
+    public function store(CustomerRequest $request): JsonResponse
+    {
+
         $customer = $this->customerService->createCustomer(
             $request->validated()
         );
@@ -59,7 +60,7 @@ class CustomerController extends Controller
         ]);
     }
 
-    public function update(Request $request, int $id): JsonResponse
+    public function update(CustomerRequest $request, int $id): JsonResponse
     {
         $customer = $this->customerService->updateCustomer(
             $id,

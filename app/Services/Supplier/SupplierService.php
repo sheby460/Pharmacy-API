@@ -19,9 +19,23 @@ class SupplierService {
         return $this->supplierRepository->getAll();
     }
 
-    public function paginateSuppliers(int $perPage = 15): LengthAwarePaginator {
-        return $this->supplierRepository->paginate($perPage);
-    }
+    public function paginateSuppliers(
+    int $perPage = 15,
+    string $search = ''
+) {
+    return Supplier::query()
+        ->when($search !== '', function ($query) use ($search) {
+            $query->where(function ($query) use ($search) {
+                $query
+                    ->where('supplier_name', 'like', "%{$search}%")
+                    ->orWhere('location', 'like', "%{$search}%")
+                    ->orWhere('contacts', 'like', "%{$search}%")
+                    ->orWhere('tax_ID', 'like', "%{$search}%");
+            });
+        })
+        ->latest()
+        ->paginate($perPage);
+}
 
     public function getSupplierById(int $id): Supplier {
         return $this->supplierRepository->findById($id);

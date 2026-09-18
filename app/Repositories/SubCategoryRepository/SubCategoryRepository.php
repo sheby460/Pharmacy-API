@@ -1,25 +1,34 @@
 <?php
 
 namespace App\Repositories\SubCategoryRepository;
-use Illuminate\Support\Collection;
-use Illuminate\Pagination\LengthAwarePaginator;
+
 use App\Models\SubCategory;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 class SubCategoryRepository implements SubCategoryInterface
 {
     public function getAll(): Collection
     {
-        return SubCategory::query()->latest()->get();
+        return SubCategory::query()
+            ->with('category')
+            ->latest()
+            ->get();
     }
 
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
-        return SubCategory::query()->latest()->paginate($perPage);
+        return SubCategory::query()
+            ->with('category')
+            ->latest()
+            ->paginate($perPage);
     }
 
     public function findById(int $id): SubCategory
     {
-        return SubCategory::query()->findOrFail($id);
+        return SubCategory::query()
+            ->with('category')
+            ->findOrFail($id);
     }
 
     public function create(array $data): SubCategory
@@ -27,10 +36,13 @@ class SubCategoryRepository implements SubCategoryInterface
         return SubCategory::create($data);
     }
 
-    public function update(SubCategory $subCategory, array $data): SubCategory
-    {
+    public function update(
+        SubCategory $subCategory,
+        array $data
+    ): SubCategory {
         $subCategory->update($data);
-        return $subCategory->refresh();
+
+        return $subCategory->refresh()->load('category');
     }
 
     public function delete(SubCategory $subCategory): bool

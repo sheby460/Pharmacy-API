@@ -15,24 +15,30 @@ class SupplierController extends Controller
         protected SupplierService $supplierService
     ) {  }
 
-    public function index(Request $request): JsonResponse {
-        $perPage = (int) $request->get('per_page', 15);
-        $perPage = min(max($perPage, 1), 100);
+   public function index(Request $request): JsonResponse
+{
+    $perPage = (int) $request->get('per_page', 15);
+    $perPage = min(max($perPage, 1), 100);
 
-        $suppliers = $this->supplierService->paginateSuppliers($perPage);
+    $search = trim((string) $request->get('search', ''));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Suppliers retrieved successfully.',
-            'data' =>SupplierResource::collection($suppliers->items()),
-            'meta' => [
-                'current_page' => $suppliers->currentPage(),
-                'last_page' => $suppliers->lastPage(),
-                'per_page' => $suppliers->perPage(),
-                'total' => $suppliers->total(),
-            ],
-        ]);
-    }
+    $suppliers = $this->supplierService->paginateSuppliers(
+        perPage: $perPage,
+        search: $search,
+    );
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Suppliers retrieved successfully.',
+        'data' => SupplierResource::collection($suppliers->items()),
+        'meta' => [
+            'current_page' => $suppliers->currentPage(),
+            'last_page' => $suppliers->lastPage(),
+            'per_page' => $suppliers->perPage(),
+            'total' => $suppliers->total(),
+        ],
+    ]);
+}
 
     public function store(SupplierRequest $request): JsonResponse
     {

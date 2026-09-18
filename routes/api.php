@@ -6,6 +6,7 @@ use App\Http\Controllers\Supplier\SupplierController;
 use App\Http\Controllers\Customer\CustomerController;
 use App\Http\Controllers\Category\CategoryController;
 use App\Http\Controllers\SubCategory\SubCategoryController;
+use App\Http\Controllers\Drugs\DrugsController;
 
 
 Route::get('/user', function (Request $request) {
@@ -16,6 +17,7 @@ Route::group([], function() {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum') ;
 });
 
  Route::prefix('suppliers')->group(function () {
@@ -42,11 +44,19 @@ Route::group([], function() {
         Route::delete('/{id}', [CategoryController::class, 'destroy']);
     });
 
-   Route::prefix('sub-categories')->group(function () {
+   Route::prefix('subCategories')->group(function () {
         Route::get('/', [SubCategoryController::class, 'index']);      
         Route::post('/', [SubCategoryController::class, 'store']);     
         Route::get('/{id}', [SubCategoryController::class, 'show']);   
         Route::put('/{id}', [SubCategoryController::class, 'update']); 
         Route::delete('/{id}', [SubCategoryController::class, 'destroy']);
+    });
+
+    Route::prefix('drugs')->group(function () {
+        Route::get('/', [DrugsController::class, 'index']);
+        Route::post('/', [DrugsController::class, 'store']);
+        Route::get('/{id}', [DrugsController::class, 'show']);
+        Route::put('/{id}', [DrugsController::class, 'update']);
+        Route::delete('/{id}', [DrugsController::class, 'destroy']);
     });
 

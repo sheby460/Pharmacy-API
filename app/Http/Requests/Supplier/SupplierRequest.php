@@ -32,7 +32,9 @@ class SupplierRequest extends FormRequest
 
     public function message(): array{
         return [
-            'supplier_name.required' => 'Supplier name is required',
+            'supplier_name.required' => 'Supplier name is required.',
+            'supplier_name.string'   => 'Supplier name must be a valid string.',
+            'supplier_name.max'      => 'Supplier name may not exceed 255 characters.',
         ];
     }
 }

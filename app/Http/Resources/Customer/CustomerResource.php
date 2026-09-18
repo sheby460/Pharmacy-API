@@ -16,10 +16,10 @@ class CustomerResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'costomer_name' =>$this->costomer_name,
-             'address' => $this->address,
-             'contacts' => $this->contacts,
-             'created_at' => $this->created_at?->toDateTimeString(),
+            'customer_name' => $this->customer_name,
+            'address' => $this->address,
+            'contacts' => $this->contacts,
+            'created_at' => $this->created_at?->toDateTimeString(),
             'updated_at' => $this->updated_at?->toDateTimeString(),
         ];
     }
