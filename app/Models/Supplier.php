@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Supplier extends Model
 {
@@ -13,4 +14,11 @@ class Supplier extends Model
     'contacts',
     'tax_ID',
    ];
+
+   public function drugBatches(): HasMany
+{
+    return $this->hasMany(DrugBatch::class);
 }
+}
+
+

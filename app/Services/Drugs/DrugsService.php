@@ -7,7 +7,6 @@ use App\Repositories\Drugs\DrugsRepositoryInterface;
 
 class DrugsService
 {
-
     public function __construct(
         protected DrugsRepositoryInterface $drugRepo
     ) {}
@@ -17,9 +16,14 @@ class DrugsService
         return $this->drugRepo->getAll();
     }
 
-    public function paginate(int $perPage = 15)
-    {
-        return $this->drugRepo->paginate($perPage);
+    public function paginate(
+        int $perPage = 15,
+        ?string $search = null
+    ) {
+        return $this->drugRepo->paginate(
+            $perPage,
+            $search
+        );
     }
 
     public function findById(int $id)
@@ -32,32 +36,60 @@ class DrugsService
         if (empty($data['barcode'])) {
             $data['barcode'] = $this->generateUniqueBarcode();
         }
+
         return $this->drugRepo->create($data);
     }
 
     protected function generateUniqueBarcode(): string
     {
         do {
-            // Format: DRG + 8 digits (example: DRG00482931)
-            $barcode = 'DRG' . str_pad(random_int(1, 999999999999), 8, '0', STR_PAD_LEFT);
-        } while (Drug::where('barcode', $barcode)->exists());
+            $barcode = 'DRG' . random_int(
+                10000000,
+                99999999
+            );
+        } while (
+            Drug::where('barcode', $barcode)->exists()
+        );
 
         return $barcode;
     }
 
-    public function update(int $id, array $data)
-    {
+    public function update(
+        int $id,
+        array $data
+    ) {
         $drug = $this->findById($id);
-         // Optional: regenerate only if barcode is empty
-        if (empty($data['barcode']) && empty($drug->barcode)) {
-            $data['barcode'] = $this->generateUniqueBarcode();
+
+        if (
+            empty($data['barcode']) &&
+            empty($drug->barcode)
+        ) {
+            $data['barcode'] =
+                $this->generateUniqueBarcode();
         }
-        return $this->drugRepo->update($drug, $data);
+
+        return $this->drugRepo->update(
+            $drug,
+            $data
+        );
     }
 
     public function delete(int $id)
     {
         $drug = $this->findById($id);
+
+        /*
+         * Do not allow deletion if stock exists.
+         */
+        $stock = $drug->batches()
+            ->sum('quantity_available');
+
+        if ($stock > 0) {
+            throw new \RuntimeException(
+                'This drug cannot be deleted while stock is available.'
+            );
+        }
+
         return $this->drugRepo->delete($drug);
     }
 }
