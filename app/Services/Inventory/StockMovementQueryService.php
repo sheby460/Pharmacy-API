@@ -4,6 +4,7 @@ namespace App\Services\Inventory;
 
 use App\Enums\StockMovementType;
 use App\Models\DrugBatch;
+use App\Models\User;
 use App\Repositories\StockMovements\StockMovementRepositoryInterface;
 use Illuminate\Validation\ValidationException;
 
@@ -33,50 +34,54 @@ class StockMovementQueryService
         return $this->repository->findById($id);
     }
 
-    public function adjust(
-        int $batchId,
-        StockMovementType $type,
+  public function adjust(
+        int $drugBatchId,
+        StockMovementType $movementType,
         int $quantity,
-        $user = null,
-        ?string $notes = null
-    ) {
-        $batch =
-            DrugBatch::findOrFail($batchId);
+        ?User $user = null,
+        ?string $notes = null,
+     ) {
+        $allowedMovementTypes = [
+            StockMovementType::ADJUSTMENT_IN,
+            StockMovementType::ADJUSTMENT_OUT,
+            StockMovementType::DAMAGE,
+            StockMovementType::EXPIRED,
+        ];
 
-        if (
-            !in_array(
-                $type,
-                [
-                    StockMovementType::ADJUSTMENT_IN,
-                    StockMovementType::ADJUSTMENT_OUT,
-                ],
-                true
-            )
-        ) {
+        if (!in_array($movementType, $allowedMovementTypes, true)) {
             throw ValidationException::withMessages([
-                'movement_type' =>
-                    'Only stock adjustment movements are allowed here.',
+                'movement_type' => [
+                    'The selected movement type is not allowed for stock adjustment.',
+                ],
             ]);
         }
 
-        if (
-            $type === StockMovementType::ADJUSTMENT_IN
-        ) {
+        $drugBatch = DrugBatch::query()
+            ->findOrFail($drugBatchId);
+
+        /**
+         * ADJUSTMENT_IN increases stock.
+         */
+        if ($movementType === StockMovementType::ADJUSTMENT_IN) {
             return $this->inventoryService->increase(
-                drugBatch: $batch,
+                drugBatch: $drugBatch,
                 quantity: $quantity,
-                movementType: $type,
+                movementType: $movementType,
                 user: $user,
-                notes: $notes
+                notes: $notes,
             );
         }
 
+        /**
+         * ADJUSTMENT_OUT, DAMAGE and EXPIRED
+         * decrease stock.
+         */
         return $this->inventoryService->decrease(
-            drugBatch: $batch,
+            drugBatch: $drugBatch,
             quantity: $quantity,
-            movementType: $type,
+            movementType: $movementType,
             user: $user,
-            notes: $notes
+            notes: $notes,
         );
     }
 }

@@ -7,7 +7,7 @@ use App\Models\DrugBatch;
 use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
+use Illuminate\Validation\ValidationException;
 
 class InventoryService
 {
@@ -29,9 +29,11 @@ class InventoryService
         ?string $notes = null,
     ): StockMovement {
         if ($quantity <= 0) {
-            throw new RuntimeException(
-                'Stock quantity must be greater than zero.'
-            );
+            throw ValidationException::withMessages([
+                'quantity' => [
+                    'Stock quantity must be greater than zero.',
+                ],
+            ]);
         }
 
         return DB::transaction(function () use (
@@ -47,7 +49,7 @@ class InventoryService
                 ->lockForUpdate()
                 ->findOrFail($drugBatch->id);
 
-            $before = $drugBatch->quantity_available;
+            $before = (int) $drugBatch->quantity_available;
 
             $after = $before + $quantity;
 
@@ -82,9 +84,11 @@ class InventoryService
         ?string $notes = null,
     ): StockMovement {
         if ($quantity <= 0) {
-            throw new RuntimeException(
-                'Stock quantity must be greater than zero.'
-            );
+            throw ValidationException::withMessages([
+                'quantity' => [
+                    'Stock quantity must be greater than zero.',
+                ],
+            ]);
         }
 
         return DB::transaction(function () use (
@@ -100,12 +104,14 @@ class InventoryService
                 ->lockForUpdate()
                 ->findOrFail($drugBatch->id);
 
-            $before = $drugBatch->quantity_available;
+            $before = (int) $drugBatch->quantity_available;
 
             if ($quantity > $before) {
-                throw new RuntimeException(
-                    "Insufficient stock. Available stock: {$before}."
-                );
+                throw ValidationException::withMessages([
+                    'quantity' => [
+                        "Insufficient stock. Available stock: {$before}.",
+                    ],
+                ]);
             }
 
             $after = $before - $quantity;
