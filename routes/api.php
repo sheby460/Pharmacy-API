@@ -9,6 +9,7 @@ use App\Http\Controllers\Category\CategoryController;
 use App\Http\Controllers\SubCategory\SubCategoryController;
 use App\Http\Controllers\Drugs\DrugsController;
 use App\Http\Controllers\DrugBatches\DrugBatchController;
+use App\Http\Controllers\Purchase\PurchaseController;
 use App\Http\Controllers\StockMovements\StockMovementController;
 
 Route::get('/user', function (Request $request) {
@@ -75,4 +76,10 @@ Route::prefix('stock-movements')->group(function () {
     Route::post('/adjust', [StockMovementController::class, 'adjust']);
 });
 
+Route::prefix('purchases')->group(function () {
+    Route::get('/', [PurchaseController::class, 'index']);
+    Route::post('/', [PurchaseController::class, 'store']);
+    Route::get('/{id}', [PurchaseController::class, 'show'])->whereNumber('id');
+    Route::post('/{id}/receive', [PurchaseController::class, 'receive'])->whereNumber('id');
+});
 
