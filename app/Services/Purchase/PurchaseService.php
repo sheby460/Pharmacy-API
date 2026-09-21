@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\PurchaseService;
+namespace App\Services\Purchase;
 
 use App\Enums\PurchaseStatus;
 use App\Enums\StockMovementType;

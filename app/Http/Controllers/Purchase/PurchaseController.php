@@ -5,14 +5,14 @@ namespace App\Http\Controllers\Purchase;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Purchase\PurchaseRequest;
 use App\Models\Purchase;
-use App\Services\PurchaseService\PurchaseService;
+use App\Services\Purchase\PurchaseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PurchaseController extends Controller
 {
     public function __construct(
-        protected PurchaseService $purchaseService
+        protected  PurchaseService $purchaseService
     ) {
     }
 
