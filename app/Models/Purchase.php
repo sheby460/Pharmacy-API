@@ -24,9 +24,7 @@ class Purchase extends Model
 
     protected $casts = [
         'purchase_date' => 'date',
-
         'status' => PurchaseStatus::class,
-
         'subtotal' => 'decimal:2',
         'discount' => 'decimal:2',
         'tax' => 'decimal:2',

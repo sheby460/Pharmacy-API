@@ -124,4 +124,23 @@ class PurchaseController extends Controller
             'data' => $purchase,
         ]);
     }
+
+   /**
+ * Cancel a purchase.
+ */
+public function cancel(
+    int $id,
+    Request $request
+): JsonResponse {
+    $purchase = $this->purchaseService->cancel(
+        purchaseId: $id,
+        user: $request->user(),
+    );
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Purchase cancelled successfully.',
+        'data' => $purchase,
+    ]);
+}
 }

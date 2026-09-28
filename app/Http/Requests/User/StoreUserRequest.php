@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Http\Requests\Auth;
+namespace App\Http\Requests\User;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
-class RegisterRequest extends FormRequest
+class StoreUserRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -50,6 +50,20 @@ class RegisterRequest extends FormRequest
                 'unique:users,email',
             ],
 
+            'gender' => [
+                'nullable',
+                Rule::in([
+                    'male',
+                    'female',
+                ]),
+            ],
+
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20',
+            ],
+
             'password' => [
                 'required',
                 'confirmed',
@@ -59,15 +73,9 @@ class RegisterRequest extends FormRequest
                     ->symbols(),
             ],
 
-            'gender' => [
-                'nullable',
-                Rule::in(['male', 'female']),
-            ],
-
-            'phone' => [
-                'nullable',
-                'string',
-                'max:20',
+            'is_active' => [
+                'sometimes',
+                'boolean',
             ],
         ];
     }
@@ -75,10 +83,17 @@ class RegisterRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'username.unique' => 'This username is already registered.',
-            'username.alpha_dash' => 'The username may only contain letters, numbers, dashes and underscores.',
-            'email.unique' => 'This email is already registered.',
-            'password.confirmed' => 'Password confirmation does not match.',
+            'username.unique' =>
+                'This username is already registered.',
+
+            'username.alpha_dash' =>
+                'The username may only contain letters, numbers, dashes and underscores.',
+
+            'email.unique' =>
+                'This email is already registered.',
+
+            'password.confirmed' =>
+                'Password confirmation does not match.',
         ];
     }
 }

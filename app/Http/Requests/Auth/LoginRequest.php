@@ -24,8 +24,17 @@ class LoginRequest extends FormRequest
     {
 
         return [
-            'username' => 'required',
-            'password' => 'required'
+            'username' =>[ 'required','string', 'max:255'],
+            'password' => ['required', 'string', 'max:255'],
+        ];
+    }
+
+       public function messages(): array
+    {
+        return [
+            'username.required' => 'Username is required.',
+            'password.required' => 'Password is required.',
+            'password.min' => 'The password must contain at least 8 characters.',
         ];
     }
 }
