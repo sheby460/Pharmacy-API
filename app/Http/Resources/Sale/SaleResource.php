@@ -22,12 +22,9 @@ class SaleResource extends JsonResource
             */
 
             'id' => $this->id,
-
             'invoice_number' => $this->invoice_number,
-
             'status' => $this->status?->value,
-
-            'notes' => $this->notes,
+                'notes' => $this->notes,
 
             /*
             |--------------------------------------------------------------------------
@@ -40,7 +37,7 @@ class SaleResource extends JsonResource
                 fn () => $this->customer
                     ? [
                         'id' => $this->customer->id,
-                        'name' => $this->customer->name,
+                        'customer_name' => $this->customer->customer_name,
                     ]
                     : null
             ),
@@ -56,7 +53,10 @@ class SaleResource extends JsonResource
                 fn () => $this->createdBy
                     ? [
                         'id' => $this->createdBy->id,
-                        'name' => $this->createdBy->name,
+                        'fname' => $this->createdBy->fname,
+                        'mname' => $this->createdBy->mname,
+                        'lname' => $this->createdBy->lname,
+                        'username' => $this->createdBy->username,   
                     ]
                     : null
             ),
@@ -66,7 +66,10 @@ class SaleResource extends JsonResource
                 fn () => $this->cancelledBy
                     ? [
                         'id' => $this->cancelledBy->id,
-                        'name' => $this->cancelledBy->name,
+                        'fname' => $this->cancelledBy->fname,
+                        'mname' => $this->cancelledBy->mname,
+                        'lname' => $this->cancelledBy->lname,
+                        'username' => $this->cancelledBy->username,   
                     ]
                     : null
             ),
@@ -78,11 +81,8 @@ class SaleResource extends JsonResource
             */
 
             'subtotal' => $this->subtotal,
-
             'discount' => $this->discount,
-
             'tax' => $this->tax,
-
             'total' => $this->total,
 
             /*
@@ -92,7 +92,6 @@ class SaleResource extends JsonResource
             */
 
             'cancelled_at' => $this->cancelled_at?->toISOString(),
-
             'cancellation_reason' => $this->cancellation_reason,
 
             /*
@@ -132,7 +131,6 @@ class SaleResource extends JsonResource
             */
 
             'created_at' => $this->created_at?->toISOString(),
-
             'updated_at' => $this->updated_at?->toISOString(),
         ];
     }

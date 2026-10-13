@@ -22,7 +22,7 @@ class SaleService
     public function create(
         array $data,
         User $user
-    ): Sale {
+     ): Sale {
         return DB::transaction(function () use ($data, $user): Sale {
             $items = collect($data['items'] ?? []);
             $payments = collect($data['payments'] ?? []);
@@ -204,7 +204,15 @@ class SaleService
             ]);
         }
 
-        if ($batch->expiry_date->isPast()) {
+        // if ($batch->expiry_date->isPast()) {
+        //     throw ValidationException::withMessages([
+        //         'items' => sprintf(
+        //             'Drug batch %s has expired and cannot be sold.',
+        //             $batch->batch_number
+        //         ),
+        //     ]);
+        // }
+        if ($batch->expiry_date === null || $batch->expiry_date->lt(today())) {
             throw ValidationException::withMessages([
                 'items' => sprintf(
                     'Drug batch %s has expired and cannot be sold.',

@@ -2,12 +2,12 @@
 
 namespace App\Services\Sales;
 
-use App\Models\Sale;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Builder;
 use App\Enums\SaleStatus;
+use App\Models\Sale;
 use Carbon\Carbon;
 use Carbon\Exceptions\InvalidFormatException;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 
 class SaleQueryService
 {
@@ -18,13 +18,13 @@ class SaleQueryService
      */
     public function paginate(
         array $filters = [],
-        int $perPage = 15
+        int $perPage = 15,
     ): LengthAwarePaginator {
         $query = Sale::query()
             ->with([
-                'customer:id,name',
-                'createdBy:id,name',
-                'cancelledBy:id,name',
+                'customer:id,customer_name',
+                'createdBy:id,fname,mname,lname,username',
+                'cancelledBy:id,fname,mname,lname,username',
             ])
             ->withCount([
                 'items',
@@ -38,6 +38,7 @@ class SaleQueryService
         $this->applySorting($query, $filters);
 
         return $query
+            ->orderByDesc('id')
             ->paginate($this->resolvePerPage($perPage))
             ->withQueryString();
     }
@@ -62,9 +63,8 @@ class SaleQueryService
     /**
      * Find a sale by its invoice number.
      */
-    public function findByInvoiceNumber(
-        string $invoiceNumber
-    ): Sale {
+    public function findByInvoiceNumber(string $invoiceNumber): Sale
+    {
         return Sale::query()
             ->with([
                 'customer',
@@ -79,13 +79,13 @@ class SaleQueryService
     }
 
     /**
-     * Apply invoice or customer search.
+     * Search by invoice number or customer name.
      *
      * @param array<string, mixed> $filters
      */
     private function applySearchFilter(
         Builder $query,
-        array $filters
+        array $filters,
     ): void {
         $search = trim((string) ($filters['search'] ?? ''));
 
@@ -99,56 +99,56 @@ class SaleQueryService
                 ->orWhereHas(
                     'customer',
                     function (Builder $customerQuery) use ($search): void {
-                        $customerQuery
-                            ->where('name', 'like', "%{$search}%");
+                        $customerQuery->where(
+                            'customer_name',
+                            'like',
+                            "%{$search}%"
+                        );
                     }
                 );
         });
     }
 
     /**
-     * Apply sale status filtering.
+     * Filter by sale status.
      *
      * @param array<string, mixed> $filters
      */
     private function applyStatusFilter(
         Builder $query,
-        array $filters
+        array $filters,
     ): void {
         $status = $filters['status'] ?? null;
 
         if ($status === null || $status === '') {
             return;
         }
-        $validateStatuses = array_map(
-            static fn(SaleStatus $saleStatus): string => $saleStatus->value,
-            SaleStatus::cases()
-        );
-        if (!in_array($status, $validateStatuses, true)) {
-            return;
-        }
 
-        $query->where('status', $status);
+        $validStatuses = array_map(
+            static fn (SaleStatus $saleStatus): string => $saleStatus->value,
+            SaleStatus::cases(),
+        );
+
+        if (in_array($status, $validStatuses, true)) {
+            $query->where('status', $status);
+        }
     }
 
     /**
-     * Apply customer filtering.
+     * Filter by customer.
      *
      * @param array<string, mixed> $filters
      */
     private function applyCustomerFilter(
         Builder $query,
-        array $filters
+        array $filters,
     ): void {
         $customerId = $filters['customer_id'] ?? null;
 
-        if ($customerId === null || $customerId === '') {
-            return;
+        if ($customerId !== null && $customerId !== '') {
+            $query->where('customer_id', $customerId);
         }
-
-        $query->where('customer_id', $customerId);
     }
-
 
     /**
      * Apply date range filtering.
@@ -157,7 +157,7 @@ class SaleQueryService
      */
     private function applyDateFilters(
         Builder $query,
-        array $filters
+        array $filters,
     ): void {
         $dateFrom = $this->parseDateFilter(
             $filters['date_from'] ?? null
@@ -168,41 +168,29 @@ class SaleQueryService
         );
 
         if ($dateFrom !== null) {
-            $query->whereDate(
-                'created_at',
-                '>=',
-                $dateFrom
-            );
+            $query->whereDate('created_at', '>=', $dateFrom);
         }
 
         if ($dateTo !== null) {
-            $query->whereDate(
-                'created_at',
-                '<=',
-                $dateTo
-            );
+            $query->whereDate('created_at', '<=', $dateTo);
         }
     }
 
     /**
-     * Parse a date filter safely.
+     * Parse a date filter.
      */
-    private function parseDateFilter(
-        mixed $value
-    ): ?string {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        if (!is_string($value)) {
+    private function parseDateFilter(mixed $value): ?string
+    {
+        if (!is_string($value) || $value === '') {
             return null;
         }
 
         try {
-            return Carbon::createFromFormat(
-                'Y-m-d',
-                $value
-            )->format('Y-m-d');
+            $date = Carbon::createFromFormat('!Y-m-d', $value);
+
+            return $date && $date->format('Y-m-d') === $value
+                ? $date->format('Y-m-d')
+                : null;
         } catch (InvalidFormatException) {
             return null;
         }
@@ -215,9 +203,9 @@ class SaleQueryService
      */
     private function applySorting(
         Builder $query,
-        array $filters
+        array $filters,
     ): void {
-        $allowedSortColumns = [
+        $allowedColumns = [
             'created_at',
             'total',
             'invoice_number',
@@ -225,23 +213,24 @@ class SaleQueryService
         ];
 
         $sortBy = $filters['sort_by'] ?? 'created_at';
-        $sortDirection = strtolower(
+
+        $direction = strtolower(
             (string) ($filters['sort_direction'] ?? 'desc')
         );
 
-        if (!in_array($sortBy, $allowedSortColumns, true)) {
+        if (!in_array($sortBy, $allowedColumns, true)) {
             $sortBy = 'created_at';
         }
 
-        if (!in_array($sortDirection, ['asc', 'desc'], true)) {
-            $sortDirection = 'desc';
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            $direction = 'desc';
         }
 
-        $query->orderBy($sortBy, $sortDirection);
+        $query->orderBy($sortBy, $direction);
     }
 
     /**
-     * Restrict the pagination size.
+     * Restrict pagination size.
      */
     private function resolvePerPage(int $perPage): int
     {

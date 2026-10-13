@@ -13,6 +13,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Validation\Rule;
+use App\Enums\SaleStatus;
+
 
 class SaleController extends Controller
 {
@@ -34,12 +37,9 @@ class SaleController extends Controller
                 'string',
                 'max:100',
             ],
-
-            'status' => [
-                'nullable',
-                'string',
-                'max:30',
-            ],
+          'status' => [
+            'nullable', Rule::enum(SaleStatus::class),
+          ],
 
             'customer_id' => [
                 'nullable',
@@ -79,7 +79,6 @@ class SaleController extends Controller
         ]);
 
         $perPage = (int) ($filters['per_page'] ?? 15);
-
         $sales = $this->saleQueryService->paginate(
             filters: $filters,
             perPage: $perPage,
