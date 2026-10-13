@@ -9,7 +9,6 @@ use App\Models\Purchase;
 use App\Models\User;
 use App\Services\Inventory\InventoryService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -27,102 +26,87 @@ class PurchaseService
         ?string $search = null,
         ?string $status = null
     ): LengthAwarePaginator {
+        $perPage = min(max($perPage, 1), 100);
         $normalizedSearch = trim((string) $search);
 
         return Purchase::query()
             ->with([
                 'supplier',
                 'createdBy',
+                'receivedBy',
+                'cancelledBy',
             ])
-            ->when(
-                $normalizedSearch !== '',
-                function ($query) use ($normalizedSearch) {
-                    $query->where(function ($innerQuery) use (
-                        $normalizedSearch
-                    ) {
-                        $searchValue = "%{$normalizedSearch}%";
+            ->when($normalizedSearch !== '', function ($query) use ($normalizedSearch) {
+                $searchValue = "%{$normalizedSearch}%";
 
-                        $innerQuery
-                            ->where(
-                                'invoice_number',
+                $query->where(function ($innerQuery) use ($searchValue) {
+                    $innerQuery
+                        ->where('invoice_number', 'like', $searchValue)
+                        ->orWhereHas('supplier', function ($supplierQuery) use ($searchValue) {
+                            $supplierQuery->where(
+                                'supplier_name',
                                 'like',
                                 $searchValue
-                            )
-                            ->orWhereHas(
-                                'supplier',
-                                function ($supplierQuery) use (
-                                    $searchValue
-                                ) {
-                                    $supplierQuery->where(
-                                        'supplier_name',
-                                        'like',
-                                        $searchValue
-                                    );
-                                }
                             );
-                    });
-                }
-            )
+                        });
+                });
+            })
             ->when(
                 $status !== null && $status !== '',
-                function ($query) use ($status) {
-                    $query->where('status', $status);
-                }
+                fn ($query) => $query->where('status', $status)
             )
-            ->latest()
+            ->latest('id')
             ->paginate($perPage);
     }
 
     /**
-     * Get a single purchase.
+     * Get one purchase with its related records.
      */
     public function findById(int $id): Purchase
     {
         return Purchase::query()
-            ->with([
-                'supplier',
-                'createdBy',
-                'items.drug',
-                'items.drugBatch',
-            ])
+            ->with($this->purchaseRelations())
             ->findOrFail($id);
     }
 
     /**
      * Create a purchase draft.
+     *
+     * The authenticated user is required for audit tracking.
      */
-    public function create(
-        array $data,
-        ?User $user = null
-    ): Purchase {
+    public function create(array $data, User $user): Purchase
+    {
         return DB::transaction(function () use ($data, $user) {
-            $subtotal = 0;
+            $subtotal = 0.0;
+            $items = $data['items'];
 
-            foreach ($data['items'] as $item) {
-                $lineTotal =
-                    (float) $item['purchase_price']
-                    * (int) $item['quantity_received'];
+            foreach ($items as $item) {
+                $quantity = (int) $item['quantity_received'];
+                $price = round((float) $item['purchase_price'], 2);
 
-                $subtotal += $lineTotal;
+                $subtotal += round($price * $quantity, 2);
             }
 
-            $discount = (float) ($data['discount'] ?? 0);
-            $tax = (float) ($data['tax'] ?? 0);
+            $subtotal = round($subtotal, 2);
+            $discount = round((float) ($data['discount'] ?? 0), 2);
+            $tax = round((float) ($data['tax'] ?? 0), 2);
 
-            $total = max(
-                0,
-                $subtotal - $discount + $tax
-            );
+            if ($discount > $subtotal) {
+                throw ValidationException::withMessages([
+                    'discount' => [
+                        'The discount cannot exceed the purchase subtotal.',
+                    ],
+                ]);
+            }
+
+            $total = round($subtotal - $discount + $tax, 2);
 
             $purchase = Purchase::query()->create([
                 'supplier_id' => $data['supplier_id'],
-                'created_by' => $user?->id,
-                'invoice_number' =>
-                $data['invoice_number'] ?? null,
-                'purchase_date' =>
-                $data['purchase_date'],
-                'status' =>
-                PurchaseStatus::DRAFT,
+                'created_by' => $user->id,
+                'invoice_number' => $data['invoice_number'] ?? null,
+                'purchase_date' => $data['purchase_date'],
+                'status' => PurchaseStatus::DRAFT,
                 'subtotal' => $subtotal,
                 'discount' => $discount,
                 'tax' => $tax,
@@ -130,48 +114,35 @@ class PurchaseService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            foreach ($data['items'] as $item) {
-                $lineTotal =
-                    (float) $item['purchase_price']
-                    * (int) $item['quantity_received'];
+            foreach ($items as $item) {
+                $quantity = (int) $item['quantity_received'];
+                $price = round((float) $item['purchase_price'], 2);
 
                 $purchase->items()->create([
                     'drug_id' => $item['drug_id'],
-                    'batch_number' =>
-                    $item['batch_number'],
-                    'expiry_date' =>
-                    $item['expiry_date'],
-                    'purchase_price' =>
-                    $item['purchase_price'],
-                    'selling_price' =>
-                    $item['selling_price'],
-                    'quantity_received' =>
-                    $item['quantity_received'],
-                    'line_total' => $lineTotal,
+                    'batch_number' => trim($item['batch_number']),
+                    'expiry_date' => $item['expiry_date'],
+                    'purchase_price' => $price,
+                    'selling_price' => round(
+                        (float) $item['selling_price'],
+                        2
+                    ),
+                    'quantity_received' => $quantity,
+                    'line_total' => round($price * $quantity, 2),
                 ]);
             }
 
-            return $purchase->load([
-                'supplier',
-                'createdBy',
-                'items.drug',
-            ]);
-        });
+            return $purchase->load($this->purchaseRelations());
+        }, 3);
     }
 
     /**
-     * Receive a purchase and update inventory.
+     * Receive a draft purchase and post its stock into inventory.
      */
-    public function receive(
-        int $purchaseId,
-        ?User $user = null
-    ): Purchase {
-        return DB::transaction(function () use (
-            $purchaseId,
-            $user
-        ) {
+    public function receive(int $purchaseId, User $user): Purchase
+    {
+        return DB::transaction(function () use ($purchaseId, $user) {
             $purchase = Purchase::query()
-                ->with('items')
                 ->lockForUpdate()
                 ->findOrFail($purchaseId);
 
@@ -183,7 +154,9 @@ class PurchaseService
                 ]);
             }
 
-            if ($purchase->items->isEmpty()) {
+            $items = $purchase->items()->orderBy('id')->get();
+
+            if ($items->isEmpty()) {
                 throw ValidationException::withMessages([
                     'purchase' => [
                         'Cannot receive a purchase without items.',
@@ -191,7 +164,7 @@ class PurchaseService
                 ]);
             }
 
-            foreach ($purchase->items as $item) {
+            foreach ($items as $item) {
                 $drugBatch = DrugBatch::query()
                     ->where('drug_id', $item->drug_id)
                     ->where('batch_number', $item->batch_number)
@@ -200,10 +173,8 @@ class PurchaseService
 
                 if ($drugBatch) {
                     if (
-                        $drugBatch->expiry_date
-                        ->toDateString()
-                        !== $item->expiry_date
-                        ->toDateString()
+                        $drugBatch->expiry_date->toDateString()
+                        !== $item->expiry_date->toDateString()
                     ) {
                         throw ValidationException::withMessages([
                             'items' => [
@@ -214,31 +185,32 @@ class PurchaseService
                 } else {
                     $drugBatch = DrugBatch::query()->create([
                         'drug_id' => $item->drug_id,
-                        'supplier_id' =>
-                        $purchase->supplier_id,
-                        'batch_number' =>
-                        $item->batch_number,
-                        'expiry_date' =>
-                        $item->expiry_date,
-                        'purchase_price' =>
-                        $item->purchase_price,
-                        'selling_price' =>
-                        $item->selling_price,
+                        'supplier_id' => $purchase->supplier_id,
+                        'batch_number' => $item->batch_number,
+                        'expiry_date' => $item->expiry_date,
+                        'purchase_price' => $item->purchase_price,
+                        'selling_price' => $item->selling_price,
                         'quantity_received' => 0,
                         'quantity_available' => 0,
                         'received_at' => now(),
                     ]);
                 }
 
-                $drugBatch->update([
-                    'quantity_received' =>
-                    $drugBatch->quantity_received
-                        + $item->quantity_received,
-                ]);
+                $quantity = (int) $item->quantity_received;
+
+                if ($quantity <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => [
+                            "Purchase item {$item->id} has an invalid quantity.",
+                        ],
+                    ]);
+                }
+
+                $drugBatch->increment('quantity_received', $quantity);
 
                 $this->inventoryService->increase(
                     drugBatch: $drugBatch,
-                    quantity: $item->quantity_received,
+                    quantity: $quantity,
                     movementType: StockMovementType::PURCHASE,
                     user: $user,
                     referenceType: Purchase::class,
@@ -253,39 +225,25 @@ class PurchaseService
 
             $purchase->update([
                 'status' => PurchaseStatus::RECEIVED,
+                'received_by' => $user->id,
+                'received_at' => now(),
             ]);
 
-            return $purchase->fresh([
-                'supplier',
-                'createdBy',
-                'items.drug',
-                'items.drugBatch',
-            ]);
-        });
+            return $purchase->fresh($this->purchaseRelations());
+        }, 3);
     }
 
     /**
-     * Cancel a purchase and reverse received inventory.
+     * Cancel a draft or reverse a received purchase.
      */
-    public function cancel(
-        int $purchaseId,
-        ?User $user = null
-    ): Purchase {
-        return DB::transaction(function () use (
-            $purchaseId,
-            $user
-        ) {
+    public function cancel(int $purchaseId, User $user): Purchase
+    {
+        return DB::transaction(function () use ($purchaseId, $user) {
             $purchase = Purchase::query()
-                ->with('items')
                 ->lockForUpdate()
                 ->findOrFail($purchaseId);
 
-            /*
-         * Prevent duplicate cancellation.
-         */
-            if (
-                $purchase->status === PurchaseStatus::CANCELLED
-            ) {
+            if ($purchase->status === PurchaseStatus::CANCELLED) {
                 throw ValidationException::withMessages([
                     'purchase' => [
                         'This purchase has already been cancelled.',
@@ -293,30 +251,17 @@ class PurchaseService
                 ]);
             }
 
-            /*
-         * Cancel a draft without changing inventory.
-         */
-            if (
-                $purchase->status === PurchaseStatus::DRAFT
-            ) {
+            if ($purchase->status === PurchaseStatus::DRAFT) {
                 $purchase->update([
                     'status' => PurchaseStatus::CANCELLED,
+                    'cancelled_by' => $user->id,
+                    'cancelled_at' => now(),
                 ]);
 
-                return $purchase->fresh([
-                    'supplier',
-                    'createdBy',
-                    'items.drug',
-                    'items.drugBatch',
-                ]);
+                return $purchase->fresh($this->purchaseRelations());
             }
 
-            /*
-         * Only received purchases require inventory reversal.
-         */
-            if (
-                $purchase->status !== PurchaseStatus::RECEIVED
-            ) {
+            if ($purchase->status !== PurchaseStatus::RECEIVED) {
                 throw ValidationException::withMessages([
                     'purchase' => [
                         'Only draft or received purchases can be cancelled.',
@@ -324,7 +269,9 @@ class PurchaseService
                 ]);
             }
 
-            if ($purchase->items->isEmpty()) {
+            $items = $purchase->items()->orderBy('id')->get();
+
+            if ($items->isEmpty()) {
                 throw ValidationException::withMessages([
                     'purchase' => [
                         'Cannot cancel a purchase without items.',
@@ -332,68 +279,56 @@ class PurchaseService
                 ]);
             }
 
-            foreach ($purchase->items as $item) {
-                if (!$item->drug_batch_id) {
-                    throw ValidationException::withMessages([
-                        'items' => [
-                            "Purchase item {$item->id} has no linked drug batch.",
-                        ],
-                    ]);
-                }
+            /*
+             * Preflight every item before changing stock.
+             * The transaction still guarantees rollback if any
+             * subsequent inventory operation fails.
+             */
+            $reversals = [];
 
+            foreach ($items as $item) {
                 $quantity = (int) $item->quantity_received;
 
-                if ($quantity <= 0) {
+                if (!$item->drug_batch_id || $quantity <= 0) {
                     throw ValidationException::withMessages([
                         'items' => [
-                            "Purchase item {$item->id} has an invalid quantity.",
+                            "Purchase item {$item->id} has an invalid batch or quantity.",
                         ],
                     ]);
                 }
 
-                /*
-             * Lock the batch before checking and updating
-             * its received quantity.
-             */
                 $drugBatch = DrugBatch::query()
                     ->lockForUpdate()
                     ->findOrFail($item->drug_batch_id);
 
-                $availableQuantity = (int) $drugBatch->quantity_available;
-
-                $receivedQuantity = (int) $drugBatch->quantity_received;
-
-                /*
-             * Do not reverse stock that is no longer available.
-             */
-                if ($quantity > $availableQuantity) {
+                if ($quantity > (int) $drugBatch->quantity_available) {
                     throw ValidationException::withMessages([
                         'items' => [
-                            "Cannot cancel purchase because batch "
-                                . "{$drugBatch->batch_number} has only "
-                                . "{$availableQuantity} units available, "
-                                . "but {$quantity} units must be reversed.",
+                            "Batch {$drugBatch->batch_number} does not have enough available stock to reverse this purchase.",
                         ],
                     ]);
                 }
 
-                /*
-             * Protect the aggregate received quantity.
-             */
-                if ($quantity > $receivedQuantity) {
+                if ($quantity > (int) $drugBatch->quantity_received) {
                     throw ValidationException::withMessages([
                         'items' => [
-                            "Cannot reverse {$quantity} units from batch "
-                                . "{$drugBatch->batch_number} because its "
-                                . "received quantity is {$receivedQuantity}.",
+                            "Batch {$drugBatch->batch_number} has insufficient recorded received quantity.",
                         ],
                     ]);
                 }
 
-                /*
-             * Decrease available inventory and record
-             * a reversal stock movement.
-             */
+                $reversals[] = [
+                    'item' => $item,
+                    'batch' => $drugBatch,
+                    'quantity' => $quantity,
+                ];
+            }
+
+            foreach ($reversals as $reversal) {
+                /** @var DrugBatch $drugBatch */
+                $drugBatch = $reversal['batch'];
+                $quantity = $reversal['quantity'];
+
                 $this->inventoryService->decrease(
                     drugBatch: $drugBatch,
                     quantity: $quantity,
@@ -404,29 +339,31 @@ class PurchaseService
                     notes: "Cancellation of purchase #{$purchase->id}.",
                 );
 
-                /*
-             * Decrease the aggregate quantity received
-             * after the inventory reversal succeeds.
-             */
-                $drugBatch->update([
-                    'quantity_received' => $receivedQuantity - $quantity,
-                ]);
+                $drugBatch->decrement('quantity_received', $quantity);
             }
 
-            /*
-         * Mark the purchase as cancelled only after
-         * every inventory reversal succeeds.
-         */
             $purchase->update([
                 'status' => PurchaseStatus::CANCELLED,
+                'cancelled_by' => $user->id,
+                'cancelled_at' => now(),
             ]);
 
-            return $purchase->fresh([
-                'supplier',
-                'createdBy',
-                'items.drug',
-                'items.drugBatch',
-            ]);
-        });
+            return $purchase->fresh($this->purchaseRelations());
+        }, 3);
+    }
+
+    /**
+     * Relationships needed in purchase API responses.
+     */
+    private function purchaseRelations(): array
+    {
+        return [
+            'supplier',
+            'createdBy',
+            'receivedBy',
+            'cancelledBy',
+            'items.drug',
+            'items.drugBatch',
+        ];
     }
 }

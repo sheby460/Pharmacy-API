@@ -1,23 +1,15 @@
 <?php
-
 namespace App\Http\Requests\Purchase;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class PurchaseRequest extends FormRequest
 {
-    /**
-     * Determine whether the user is authorized.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Validation rules.
-     */
     public function rules(): array
     {
         return [
@@ -35,16 +27,18 @@ class PurchaseRequest extends FormRequest
 
             'purchase_date' => [
                 'required',
-                'date',
+                'date_format:Y-m-d',
             ],
 
             'discount' => [
+                'sometimes',
                 'nullable',
                 'numeric',
                 'min:0',
             ],
 
             'tax' => [
+                'sometimes',
                 'nullable',
                 'numeric',
                 'min:0',
@@ -76,7 +70,8 @@ class PurchaseRequest extends FormRequest
 
             'items.*.expiry_date' => [
                 'required',
-                'date',
+                'date_format:Y-m-d',
+                'after:today',
             ],
 
             'items.*.purchase_price' => [
@@ -99,56 +94,27 @@ class PurchaseRequest extends FormRequest
         ];
     }
 
-    /**
-     * Custom validation messages.
-     */
     public function messages(): array
     {
         return [
-            'supplier_id.required' =>
-                'Please select a supplier.',
-
-            'supplier_id.exists' =>
-                'The selected supplier does not exist.',
-
-            'purchase_date.required' =>
-                'Please select the purchase date.',
-
-            'items.required' =>
-                'Please add at least one purchase item.',
-
-            'items.min' =>
-                'A purchase must contain at least one item.',
-
-            'items.*.drug_id.required' =>
-                'Please select a drug for every item.',
-
-            'items.*.drug_id.exists' =>
-                'One of the selected drugs does not exist.',
-
-            'items.*.batch_number.required' =>
-                'Batch number is required for every item.',
-
-            'items.*.expiry_date.required' =>
-                'Expiry date is required for every item.',
-
-            'items.*.purchase_price.required' =>
-                'Purchase price is required for every item.',
-
-            'items.*.selling_price.required' =>
-                'Selling price is required for every item.',
-
-            'items.*.quantity_received.required' =>
-                'Quantity is required for every item.',
-
-            'items.*.quantity_received.min' =>
-                'Each item quantity must be at least 1.',
+            'supplier_id.required' => 'Please select a supplier.',
+            'supplier_id.exists' => 'The selected supplier does not exist.',
+            'purchase_date.required' => 'Please select the purchase date.',
+            'purchase_date.date_format' => 'The purchase date must use YYYY-MM-DD format.',
+            'items.required' => 'Please add at least one purchase item.',
+            'items.min' => 'A purchase must contain at least one item.',
+            'items.*.drug_id.required' => 'Please select a drug for every item.',
+            'items.*.drug_id.exists' => 'One of the selected drugs does not exist.',
+            'items.*.batch_number.required' => 'Batch number is required for every item.',
+            'items.*.expiry_date.required' => 'Expiry date is required for every item.',
+            'items.*.expiry_date.after' => 'A drug batch expiry date must be in the future.',
+            'items.*.purchase_price.required' => 'Purchase price is required for every item.',
+            'items.*.selling_price.required' => 'Selling price is required for every item.',
+            'items.*.quantity_received.required' => 'Quantity is required for every item.',
+            'items.*.quantity_received.min' => 'Each item quantity must be at least 1.',
         ];
     }
 
-    /**
-     * Prepare normalized request values.
-     */
     protected function prepareForValidation(): void
     {
         $this->merge([
@@ -157,11 +123,11 @@ class PurchaseRequest extends FormRequest
                 : null,
 
             'discount' => $this->filled('discount')
-                ? (float) $this->input('discount')
+                ? $this->input('discount')
                 : 0,
 
             'tax' => $this->filled('tax')
-                ? (float) $this->input('tax')
+                ? $this->input('tax')
                 : 0,
 
             'notes' => $this->filled('notes')

@@ -48,24 +48,19 @@ class StockMovementController extends Controller
 
         return response()->json([
             'success' => true,
-
             'message' =>
                 'Stock movements retrieved successfully.',
-
             'data' => StockMovementsResource::collection(
                 $movements->items()
             ),
 
             'meta' => [
                 'current_page' =>
-                    $movements->currentPage(),
-
+                   $movements->currentPage(),
                 'last_page' =>
                     $movements->lastPage(),
-
                 'per_page' =>
                     $movements->perPage(),
-
                 'total' =>
                     $movements->total(),
             ],
@@ -82,10 +77,8 @@ class StockMovementController extends Controller
 
         return response()->json([
             'success' => true,
-
             'message' =>
                 'Stock movement retrieved successfully.',
-
             'data' => new StockMovementsResource(
                 $movement
             ),
@@ -99,7 +92,6 @@ class StockMovementController extends Controller
         StockAdjustmentRequest $request
     ): JsonResponse {
         $validated = $request->validated();
-
         $movementType = StockMovementType::from(
             $validated['movement_type']
         );

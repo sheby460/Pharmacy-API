@@ -89,21 +89,25 @@ Route::middleware('auth:sanctum')->group(function () {
     // Drug Batches
     Route::get('/drug-batches', [DrugBatchController::class, 'index'])->middleware('permission:drug-batches.view');
     Route::post('/drug-batches', [DrugBatchController::class, 'store'])->middleware('permission:drug-batches.create');
-    Route::get('/drug-batches/{drugBatch}', [DrugBatchController::class, 'show'])->middleware('permission:drug-batches.view');
-    Route::put('/drug-batches/{drugBatch}', [DrugBatchController::class, 'update'])->middleware('permission:drug-batches.update');
-    Route::delete('/drug-batches/{drugBatch}', [DrugBatchController::class, 'destroy'])->middleware('permission:drug-batches.delete');
+    Route::get('/drug-batches/{id}', [DrugBatchController::class, 'show'])->middleware('permission:drug-batches.view');
+    Route::put('/drug-batches/{id}', [DrugBatchController::class, 'update'])->middleware('permission:drug-batches.update');
+    Route::delete('/drug-batches/{id}', [DrugBatchController::class, 'destroy'])->middleware('permission:drug-batches.delete');
+    Route::get('/drug-batches/drugs/{drugId}/batches', [DrugBatchController::class, 'byDrug'])->middleware('permission:drug-batches.view');
+
 
     // Stock Movements
     Route::get('/stock-movements', [StockMovementController::class, 'index'])->middleware('permission:inventory.view-movements');
     Route::post('/stock-movements', [StockMovementController::class, 'store'])->middleware('permission:inventory.adjust-stock');
+    Route::post('/stock-movements/adjust', [StockMovementController::class, 'adjust'])->middleware('permission:inventory.adjust-stock'); 
 
-    // Purchases
+    // Purchases and a change to a world social media forever skin is a teachermarket gone spectrum they are very important
     Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('permission:purchases.view');
     Route::post('/purchases', [PurchaseController::class, 'store'])->middleware('permission:purchases.create');
     Route::get('/purchases/{purchase}', [PurchaseController::class, 'show'])->middleware('permission:purchases.view');
     Route::put('/purchases/{purchase}', [PurchaseController::class, 'update'])->middleware('permission:purchases.update');
     Route::post('/purchases/{purchase}/approve', [PurchaseController::class, 'approve'])->middleware('permission:purchases.approve');
     Route::post('/purchases/{purchase}/cancel', [PurchaseController::class, 'cancel'])->middleware('permission:purchases.cancel');
+    Route::post('/purchases/{purchase}/receive', [PurchaseController::class, 'receive'])->middleware('permission:purchases.approve');
 
     // Sales
     Route::get('/sales', [SaleController::class, 'index'])->middleware('permission:sales.view');

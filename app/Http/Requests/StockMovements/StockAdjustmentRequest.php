@@ -78,65 +78,61 @@ class StockAdjustmentRequest extends FormRequest
     /**
      * Custom validation messages.
      */
-    public function messages(): array
-    {
-        return [
-            'drug_batch_id.required' =>
-                'Please select a drug batch.',
+   public function messages(): array
+{
+    return [
+        'drug_batch_id.required' => 'Please select a drug batch.',
+        'drug_batch_id.integer' => 'The selected drug batch ID must be an integer.',
+        'drug_batch_id.min' => 'The selected drug batch ID is invalid.',
+        'drug_batch_id.exists' => 'The selected drug batch does not exist.',
 
-            'drug_batch_id.integer' =>
-                'The selected drug batch is invalid.',
+        'movement_type.required' => 'Please select a movement type.',
+        'movement_type.in' => 'The selected movement type is invalid.',
 
-            'drug_batch_id.exists' =>
-                'The selected drug batch does not exist.',
+        'quantity.required' => 'Please enter the stock quantity.',
+        'quantity.integer' => 'Stock quantity must be a whole number.',
+        'quantity.min' => 'Stock quantity must be at least 1.',
 
-            'movement_type.required' =>
-                'Please select a movement type.',
-
-            'movement_type.in' =>
-                'The selected movement type is invalid.',
-
-            'quantity.required' =>
-                'Please enter the stock quantity.',
-
-            'quantity.integer' =>
-                'Stock quantity must be a whole number.',
-
-            'quantity.min' =>
-                'Stock quantity must be at least 1.',
-
-            'notes.required' =>
-                'Notes are required for damage or expired stock.',
-
-            'notes.string' =>
-                'Notes must be a valid text value.',
-
-            'notes.max' =>
-                'Notes cannot exceed 1000 characters.',
-        ];
-    }
-
+        'notes.required' => 'Notes are required for damage or expired stock.',
+        'notes.string' => 'Notes must be valid text.',
+        'notes.max' => 'Notes cannot exceed 1000 characters.',
+    ];
+}
     /**
      * Prepare request data before validation.
      */
+    // protected function prepareForValidation(): void
+    // {
+    //     $this->merge([
+    //         'drug_batch_id' => $this->filled('drug_batch_id')
+    //             ? (int) $this->input('drug_batch_id')
+    //             : null,
+
+    //         'quantity' => $this->filled('quantity')
+    //             ? (int) $this->input('quantity')
+    //             : null,
+
+    //         'movement_type' => $this->filled('movement_type')
+    //             ? strtoupper(trim((string) $this->input('movement_type')))
+    //             : null,
+
+    //         'notes' => $this->filled('notes')
+    //             ? trim((string) $this->input('notes'))
+    //             : null,
+    //     ]);
+    // }
+
     protected function prepareForValidation(): void
-    {
-        $this->merge([
-            'drug_batch_id' => $this->filled('drug_batch_id')
-                ? (int) $this->input('drug_batch_id')
-                : null,
+{
+    $this->merge([
+        'movement_type' => $this->filled('movement_type')
+            ? strtoupper(trim((string) $this->input('movement_type')))
+            : null,
 
-            'quantity' => $this->filled('quantity')
-                ? (int) $this->input('quantity')
-                : null,
+        'notes' => $this->filled('notes')
+            ? trim((string) $this->input('notes'))
+            : null,
+    ]);
+}
 
-            'movement_type' => $this->filled('movement_type')
-                ? strtoupper(trim((string) $this->input('movement_type')))
-                : null,
-
-            'notes' => $this->filled('notes')
-                ? trim((string) $this->input('notes'))
-                : null,
-        ]);
-    }
 }

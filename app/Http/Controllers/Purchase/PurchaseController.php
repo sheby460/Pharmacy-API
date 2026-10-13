@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Purchase;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Purchase\PurchaseRequest;
+use App\Http\Resources\Purchase\PurchaseResource;
 use App\Models\Purchase;
 use App\Services\Purchase\PurchaseService;
 use Illuminate\Http\JsonResponse;
@@ -12,64 +13,44 @@ use Illuminate\Http\Request;
 class PurchaseController extends Controller
 {
     public function __construct(
-        protected  PurchaseService $purchaseService
-    ) {
-    }
+        protected PurchaseService $purchaseService
+    ) {}
 
-    /**
-     * Display paginated purchases.
-     */
-    public function index(
-        Request $request
-    ): JsonResponse {
-        $perPage = min(
-            max(
-                (int) $request->query('per_page', 15),
-                1
-            ),
-            100
-        );
-
-        $search = $request->query('search');
-
-        $status = $request->query('status');
+    public function index(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:150'],
+            'status' => [
+                'sometimes',
+                'nullable',
+                'in:draft,received,cancelled',
+            ],
+        ]);
 
         $purchases = $this->purchaseService->paginate(
-            perPage: $perPage,
-            search: $search,
-            status: $status,
+            perPage: (int) ($validated['per_page'] ?? 15),
+            search: $validated['search'] ?? null,
+            status: $validated['status'] ?? null,
         );
 
         return response()->json([
             'success' => true,
-
-            'message' =>
-                'Purchases retrieved successfully.',
-
-            'data' => $purchases->items(),
-
+            'message' => 'Purchases retrieved successfully.',
+            'data' => PurchaseResource::collection(
+                $purchases->items()
+            )->resolve($request),
             'meta' => [
-                'current_page' =>
-                    $purchases->currentPage(),
-
-                'last_page' =>
-                    $purchases->lastPage(),
-
-                'per_page' =>
-                    $purchases->perPage(),
-
-                'total' =>
-                    $purchases->total(),
+                'current_page' => $purchases->currentPage(),
+                'last_page' => $purchases->lastPage(),
+                'per_page' => $purchases->perPage(),
+                'total' => $purchases->total(),
             ],
         ]);
     }
 
-    /**
-     * Store a purchase draft.
-     */
-    public function store(
-        PurchaseRequest $request
-    ): JsonResponse {
+    public function store(PurchaseRequest $request): JsonResponse
+    {
         $purchase = $this->purchaseService->create(
             data: $request->validated(),
             user: $request->user(),
@@ -77,70 +58,53 @@ class PurchaseController extends Controller
 
         return response()->json([
             'success' => true,
-
-            'message' =>
-                'Purchase draft created successfully.',
-
-            'data' => $purchase,
+            'message' => 'Purchase draft created successfully.',
+            'data' => (new PurchaseResource($purchase))->resolve($request),
         ], 201);
     }
 
-    /**
-     * Display a purchase.
-     */
     public function show(
-        int $id
+        Purchase $purchase,
+        Request $request
     ): JsonResponse {
-        $purchase = $this->purchaseService->findById($id);
+        $purchase = $this->purchaseService->findById($purchase->id);
 
         return response()->json([
             'success' => true,
-
-            'message' =>
-                'Purchase retrieved successfully.',
-
-            'data' => $purchase,
+            'message' => 'Purchase retrieved successfully.',
+            'data' => (new PurchaseResource($purchase))->resolve($request),
         ]);
     }
 
-    /**
-     * Receive a purchase.
-     */
     public function receive(
-        int $id,
+        Purchase $purchase,
         Request $request
     ): JsonResponse {
         $purchase = $this->purchaseService->receive(
-            purchaseId: $id,
+            purchaseId: $purchase->id,
             user: $request->user(),
         );
 
         return response()->json([
             'success' => true,
-
-            'message' =>
-                'Purchase received successfully.',
-
-            'data' => $purchase,
+            'message' => 'Purchase received successfully.',
+            'data' => (new PurchaseResource($purchase))->resolve($request),
         ]);
     }
 
-   /**
- * Cancel a purchase.
- */
-public function cancel(
-    int $id,
-    Request $request
-): JsonResponse {
-    $purchase = $this->purchaseService->cancel(
-        purchaseId: $id,
-        user: $request->user(),
-    );
+    public function cancel(
+        Purchase $purchase,
+        Request $request
+    ): JsonResponse {
+        $purchase = $this->purchaseService->cancel(
+            purchaseId: $purchase->id,
+            user: $request->user(),
+        );
 
-    return response()->json([
-        'success' => true,
-        'message' => 'Purchase cancelled successfully.',
-        'data' => $purchase,
-    ]);
-}
+        return response()->json([
+            'success' => true,
+            'message' => 'Purchase cancelled successfully.',
+            'data' => (new PurchaseResource($purchase))->resolve($request),
+        ]);
+    }
 }

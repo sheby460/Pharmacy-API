@@ -12,6 +12,10 @@ class Purchase extends Model
     protected $fillable = [
         'supplier_id',
         'created_by',
+        'received_by',
+        'cancelled_by',
+        'received_at',
+        'cancelled_at',
         'invoice_number',
         'purchase_date',
         'status',
@@ -29,6 +33,8 @@ class Purchase extends Model
         'discount' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
+        'received_at' => 'datetime',
+        'cancelled_at' => 'datetime',
     ];
 
     /**
@@ -51,7 +57,7 @@ class Purchase extends Model
             'created_by'
         );
     }
-
+    
     /**
      * Items included in the purchase.
      */
@@ -60,6 +66,22 @@ class Purchase extends Model
         return $this->hasMany(
             PurchaseItem::class
         );
+    }
+
+    /**
+     * User who received the purchase.
+     */
+    public function receivedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'received_by');
+    }
+
+    /**
+     * User who cancelled the purchase.
+     */
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 
     /**
