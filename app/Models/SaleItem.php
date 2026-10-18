@@ -11,6 +11,13 @@ class SaleItem extends Model
         'sale_id',
         'drug_id',
         'drug_batch_id',
+
+        // Historical snapshots for receipts and traceability.
+        'drug_name_snapshot',
+        'drug_code_snapshot',
+        'batch_number_snapshot',
+        'expiry_date_snapshot',
+
         'quantity',
         'unit_price',
         'discount',
@@ -27,13 +34,8 @@ class SaleItem extends Model
         'tax' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'total' => 'decimal:2',
+        'expiry_date_snapshot' => 'date',
     ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Relationships
-    |--------------------------------------------------------------------------
-    */
 
     public function sale(): BelongsTo
     {

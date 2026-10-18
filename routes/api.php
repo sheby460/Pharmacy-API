@@ -13,13 +13,13 @@ use App\Http\Controllers\StockMovements\StockMovementController;
 use App\Http\Controllers\Purchase\PurchaseController;
 use App\Http\Controllers\Role\RoleController;
 use App\Http\Controllers\Sales\SaleController;
+use App\Http\Controllers\Sales\SaleReturnController;
 
 // ─────────────────────────────────────────────
 // Public Auth Routes
 // ─────────────────────────────────────────────
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
-    Route::post('/register', [AuthController::class, 'register']);
 });
 
 // ─────────────────────────────────────────────
@@ -40,7 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users/{user}', [UserController::class, 'show'])->middleware('permission:users.view');
     Route::put('/users/{user}', [UserController::class, 'update'])->middleware('permission:users.update');
     Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('permission:users.delete');
-    Route::patch('/users/{user}/status', [UserController::class, 'updateStatus'])->middleware('permission:users.update');
+    Route::patch('/users/{user}/status', [UserController::class, 'updateStatus'])->middleware('permission:users.change-status');
     Route::put('/users/{user}/role', [UserController::class, 'assignRole'])->middleware('permission:users.assign-roles');
 
     Route::middleware('permission:roles.view')->get('/roles', [RoleController::class, 'index']);
@@ -49,8 +49,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('permission:roles.update')->put('/roles/{role}', [RoleController::class, 'update']);
     Route::middleware('permission:roles.delete')->delete('/roles/{role}', [RoleController::class, 'destroy']);
 
-    Route::middleware('permission:roles.view')->get('/permissions', [RoleController::class, 'permissions']);
-    Route::middleware('permission:roles.update')->put('/roles/{role}/permissions', [RoleController::class, 'assignPermissions']);
+    Route::middleware('permission:permissions.view')->get('/permissions', [RoleController::class, 'permissions']);
+    Route::middleware('permission:roles.assign-permissions')->put('/roles/{role}/permissions', [RoleController::class, 'assignPermission']);
     // Suppliers
     Route::get('/suppliers', [SupplierController::class, 'index'])->middleware('permission:suppliers.view');
     Route::post('/suppliers', [SupplierController::class, 'store'])->middleware('permission:suppliers.create');
@@ -90,29 +90,35 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/drug-batches', [DrugBatchController::class, 'index'])->middleware('permission:drug-batches.view');
     Route::post('/drug-batches', [DrugBatchController::class, 'store'])->middleware('permission:drug-batches.create');
     Route::get('/drug-batches/{id}', [DrugBatchController::class, 'show'])->middleware('permission:drug-batches.view');
-    Route::put('/drug-batches/{id}', [DrugBatchController::class, 'update'])->middleware('permission:drug-batches.update');
-    Route::delete('/drug-batches/{id}', [DrugBatchController::class, 'destroy'])->middleware('permission:drug-batches.delete');
     Route::get('/drug-batches/drugs/{drugId}/batches', [DrugBatchController::class, 'byDrug'])->middleware('permission:drug-batches.view');
 
 
     // Stock Movements
     Route::get('/stock-movements', [StockMovementController::class, 'index'])->middleware('permission:inventory.view-movements');
-    Route::post('/stock-movements', [StockMovementController::class, 'store'])->middleware('permission:inventory.adjust-stock');
-    Route::post('/stock-movements/adjust', [StockMovementController::class, 'adjust'])->middleware('permission:inventory.adjust-stock'); 
+    // Keep the REST collection endpoint and the explicit adjustment endpoint
+    // mapped to the same validated, transactional operation.
+    Route::post('/stock-movements', [StockMovementController::class, 'adjust'])->middleware('permission:inventory.adjust-stock');
+    Route::get('/stock-movements/{id}', [StockMovementController::class, 'show'])->middleware('permission:inventory.view-movements');
+    Route::post('/stock-movements/adjust', [StockMovementController::class, 'adjust'])->middleware('permission:inventory.adjust-stock');
 
-    // Purchases and a change to a world social media forever skin is a teachermarket gone spectrum they are very important
+    // Purchases
     Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('permission:purchases.view');
     Route::post('/purchases', [PurchaseController::class, 'store'])->middleware('permission:purchases.create');
     Route::get('/purchases/{purchase}', [PurchaseController::class, 'show'])->middleware('permission:purchases.view');
-    Route::put('/purchases/{purchase}', [PurchaseController::class, 'update'])->middleware('permission:purchases.update');
-    Route::post('/purchases/{purchase}/approve', [PurchaseController::class, 'approve'])->middleware('permission:purchases.approve');
     Route::post('/purchases/{purchase}/cancel', [PurchaseController::class, 'cancel'])->middleware('permission:purchases.cancel');
     Route::post('/purchases/{purchase}/receive', [PurchaseController::class, 'receive'])->middleware('permission:purchases.approve');
 
     // Sales
     Route::get('/sales', [SaleController::class, 'index'])->middleware('permission:sales.view');
+    Route::get('/sales/invoice/{invoice}', [SaleController::class, 'showByInvoice'])->middleware('permission:sales.view');
     Route::post('/sales', [SaleController::class, 'store'])->middleware('permission:sales.create');
     Route::get('/sales/{sale}', [SaleController::class, 'show'])->middleware('permission:sales.view');
     Route::post('/sales/{sale}/cancel', [SaleController::class, 'cancel'])->middleware('permission:sales.cancel');
-    Route::post('/sales/{sale}/refund', [SaleController::class, 'refund'])->middleware('permission:sales.refund');
+
+    // Sale Returns
+    Route::get('/sales/{saleId}/returnable-items', [SaleReturnController::class, 'returnableItems'])->whereNumber('saleId')->middleware('permission:sales.view');
+    Route::get('/sale-returns', [SaleReturnController::class, 'index'])->middleware('permission:sales.view');
+    Route::post('/sale-returns', [SaleReturnController::class, 'store'])->middleware('permission:sales.create');
+    Route::get('/sale-returns/{id}', [SaleReturnController::class, 'show'])->whereNumber('id')->middleware('permission:sales.view');
+    Route::post('/sale-returns/{id}/confirm-refund', [SaleReturnController::class, 'confirmRefund'])->whereNumber('id')->middleware('permission:sales.process-returns');
 });

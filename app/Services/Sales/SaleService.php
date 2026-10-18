@@ -15,59 +15,107 @@ use Illuminate\Validation\ValidationException;
 
 class SaleService
 {
+    /**
+     * Maximum supported monetary amount: 9,999,999,999.99.
+     */
+    private const MAX_MONEY_CENTS = 999999999999;
+
     public function __construct(
         private readonly InventoryService $inventoryService,
     ) {}
 
-    public function create(
-        array $data,
-        User $user
-     ): Sale {
+    /**
+     * Create a sale, deduct stock, and record payments atomically.
+     *
+     * Prices are taken from the database, never from client input.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function create(array $data, User $user): Sale
+    {
         return DB::transaction(function () use ($data, $user): Sale {
             $items = collect($data['items'] ?? []);
             $payments = collect($data['payments'] ?? []);
+
             $this->validateSaleInput($items, $payments);
+
             $calculatedItems = $this->prepareSaleItems($items);
-            $subtotal = $this->calculateSubtotal($calculatedItems);
-            $discount = $this->normalizeMoney(
-                $data['discount'] ?? 0
-            );
-            $tax = $this->normalizeMoney(
-                $data['tax'] ?? 0
-            );
-            $this->validateDiscount($discount, $subtotal);
-            $total = $this->calculateTotal(
-                $subtotal,
-                $discount,
-                $tax
+
+            $subtotalCents = 0;
+
+            foreach ($calculatedItems as $item) {
+                $lineSubtotal = $item['subtotal_cents'];
+
+                if (
+                    $lineSubtotal > self::MAX_MONEY_CENTS - $subtotalCents
+                ) {
+                    $this->fail(
+                        'items',
+                        'The sale subtotal exceeds the maximum supported amount.',
+                    );
+                }
+
+                $subtotalCents += $lineSubtotal;
+            }
+
+            $discountCents = $this->moneyToCents(
+                $data['discount'] ?? 0,
+                'discount',
             );
 
-            $this->validatePayments(
-                $payments,
-                $total
+            $taxCents = $this->moneyToCents(
+                $data['tax'] ?? 0,
+                'tax',
             );
+
+            if ($discountCents > $subtotalCents) {
+                $this->fail(
+                    'discount',
+                    'The discount cannot exceed the subtotal.',
+                );
+            }
+
+            $netSubtotalCents = $subtotalCents - $discountCents;
+
+            if ($taxCents > self::MAX_MONEY_CENTS - $netSubtotalCents) {
+                $this->fail(
+                    'tax',
+                    'The sale total exceeds the maximum supported amount.',
+                );
+            }
+
+            $totalCents = $netSubtotalCents + $taxCents;
+
+            if ($totalCents <= 0) {
+                $this->fail(
+                    'total',
+                    'The sale total must be greater than zero.',
+                );
+            }
+
+            $this->validatePayments($payments, $totalCents);
 
             $sale = Sale::query()->create([
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'customer_id' => $data['customer_id'] ?? null,
                 'created_by' => $user->id,
-                'subtotal' => $subtotal,
-                'discount' => $discount,
-                'tax' => $tax,
-                'total' => $total,
+                'subtotal' => $this->centsToMoney($subtotalCents),
+                'discount' => $this->centsToMoney($discountCents),
+                'tax' => $this->centsToMoney($taxCents),
+                'total' => $this->centsToMoney($totalCents),
                 'status' => SaleStatus::COMPLETED,
                 'notes' => $data['notes'] ?? null,
             ]);
 
             $this->createSaleItems(
-                $sale,
-                $calculatedItems,
-                $user
+                sale: $sale,
+                items: $calculatedItems,
+                user: $user,
             );
 
             $this->createSalePayments(
-                $sale,
-                $payments
+                sale: $sale,
+                payments: $payments,
             );
 
             return $sale->load([
@@ -77,292 +125,296 @@ class SaleService
                 'items.drugBatch',
                 'payments',
             ]);
-        });
+        }, 3);
     }
+
+    /**
+     * Validate the basic structure before accessing nested fields.
+     *
+     * @param Collection<int|string, mixed> $items
+     * @param Collection<int|string, mixed> $payments
+     */
     private function validateSaleInput(
         Collection $items,
         Collection $payments,
     ): void {
         if ($items->isEmpty()) {
-            throw ValidationException::withMessages([
-                'items' => [
-                    'A sale must contain at least one item.',
-                ],
-            ]);
+            $this->fail(
+                'items',
+                'A sale must contain at least one item.',
+            );
         }
 
         if ($payments->isEmpty()) {
-            throw ValidationException::withMessages([
-                'payments' => [
-                    'A sale must contain at least one payment.',
-                ],
-            ]);
+            $this->fail(
+                'payments',
+                'A sale must contain at least one payment.',
+            );
         }
 
-        $this->validateSaleItems($items);
-    }
-
-    /**
-     * Validate sale item quantities and duplicate batches.
-     *
-     * @param Collection<int, mixed> $items
-     */
-    private function validateSaleItems(Collection $items): void
-    {
-        $batchIds = [];
+        $seenBatchIds = [];
 
         foreach ($items as $index => $item) {
-            $batchId = (int) ($item['drug_batch_id'] ?? 0);
-            $quantity = (int) ($item['quantity'] ?? 0);
-
-            if ($batchId <= 0) {
-                throw ValidationException::withMessages([
-                    "items.{$index}.drug_batch_id" => [
-                        'A valid drug batch is required.',
-                    ],
-                ]);
+            if (! is_array($item)) {
+                $this->fail(
+                    "items.{$index}",
+                    'The sale item is invalid.',
+                );
             }
 
-            if ($quantity <= 0) {
-                throw ValidationException::withMessages([
-                    "items.{$index}.quantity" => [
-                        'The quantity must be greater than zero.',
-                    ],
-                ]);
+            $batchId = filter_var(
+                $item['drug_batch_id'] ?? null,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]],
+            );
+
+            if ($batchId === false) {
+                $this->fail(
+                    "items.{$index}.drug_batch_id",
+                    'A valid drug batch is required.',
+                );
             }
 
-            if (in_array($batchId, $batchIds, true)) {
-                throw ValidationException::withMessages([
-                    "items.{$index}.drug_batch_id" => [
-                        'The same drug batch cannot be added more than once.',
-                    ],
-                ]);
+            $quantity = filter_var(
+                $item['quantity'] ?? null,
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]],
+            );
+
+            if ($quantity === false) {
+                $this->fail(
+                    "items.{$index}.quantity",
+                    'Quantity must be a positive whole number.',
+                );
             }
 
-            $batchIds[] = $batchId;
+            if (isset($seenBatchIds[$batchId])) {
+                $this->fail(
+                    "items.{$index}.drug_batch_id",
+                    'Each drug batch must appear only once per sale.',
+                );
+            }
+
+            $seenBatchIds[$batchId] = true;
+        }
+
+        foreach ($payments as $index => $payment) {
+            if (! is_array($payment)) {
+                $this->fail(
+                    "payments.{$index}",
+                    'The payment is invalid.',
+                );
+            }
+
+            $method = $payment['payment_method'] ?? null;
+
+            if (
+                ! is_string($method)
+                || trim($method) === ''
+            ) {
+                $this->fail(
+                    "payments.{$index}.payment_method",
+                    'A payment method is required.',
+                );
+            }
+
+            $this->moneyToCents(
+                $payment['amount'] ?? null,
+                "payments.{$index}.amount",
+            );
         }
     }
 
     /**
-     * Resolve batches and prepare server-calculated sale items.
-     * Client-provided prices and totals are intentionally ignored.
+     * Return batches locked in ascending ID order.
+     *
+     * @param Collection<int|string, mixed> $items
+     * @return Collection<int, array<string, mixed>>
      */
-    private function prepareSaleItems(
-        Collection $items
-    ): Collection {
-        return $items->map(function (array $item): array {
-            $batch = DrugBatch::query()
-                ->with('drug')
-                ->lockForUpdate()
-                ->find($item['drug_batch_id']);
+    private function prepareSaleItems(Collection $items): Collection
+    {
+        $batchIds = $items
+            ->pluck('drug_batch_id')
+            ->map(fn($id): int => (int) $id)
+            ->sort()
+            ->values();
 
-            if (!$batch) {
-                throw ValidationException::withMessages([
-                    'items' => 'One of the selected drug batches was not found.',
-                ]);
+        $batches = DrugBatch::query()
+            ->with('drug')
+            ->whereIn('id', $batchIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        $prepared = collect();
+
+        foreach ($items as $index => $item) {
+            $batchId = (int) $item['drug_batch_id'];
+            $batch = $batches->get($batchId);
+
+            if ($batch === null) {
+                $this->fail(
+                    "items.{$index}.drug_batch_id",
+                    "Drug batch {$batchId} was not found.",
+                );
             }
+
             $this->validateBatch($batch);
-            $quantity = (int) $item['quantity'];
 
-            if ($quantity > $batch->quantity_available) {
-                throw ValidationException::withMessages([
-                    'items' => sprintf(
-                        'Insufficient stock for batch %s. Available quantity: %d.',
+            $quantity = (int) $item['quantity'];
+            $available = (int) $batch->quantity_available;
+
+            if ($quantity > $available) {
+                $this->fail(
+                    "items.{$index}.quantity",
+                    sprintf(
+                        'Insufficient stock for batch %s. Available: %d.',
                         $batch->batch_number,
-                        $batch->quantity_available
+                        $available,
                     ),
-                ]);
+                );
             }
 
-            $unitPrice = $this->resolveSellingPrice($batch);
-            $subtotal = $this->roundMoney(
-                $unitPrice * $quantity
+            $unitPriceCents = $this->moneyToCents(
+                $batch->selling_price,
+                "items.{$index}.unit_price",
             );
 
-            return [
+            if (
+                $unitPriceCents > 0
+                && $quantity > intdiv(
+                    self::MAX_MONEY_CENTS,
+                    $unitPriceCents,
+                )
+            ) {
+                $this->fail(
+                    "items.{$index}.quantity",
+                    'The item subtotal exceeds the maximum supported amount.',
+                );
+            }
+
+            $subtotalCents = $unitPriceCents * $quantity;
+
+            $prepared->push([
                 'drug_id' => $batch->drug_id,
                 'drug_batch_id' => $batch->id,
                 'quantity' => $quantity,
-                'unit_price' => $unitPrice,
-                'discount' => 0,
-                'tax' => 0,
-                'subtotal' => $subtotal,
-                'total' => $subtotal,
+                'unit_price' => $this->centsToMoney($unitPriceCents),
+                'discount' => '0.00',
+                'tax' => '0.00',
+                'subtotal' => $this->centsToMoney($subtotalCents),
+                'total' => $this->centsToMoney($subtotalCents),
+                'subtotal_cents' => $subtotalCents,
+                'drug_code_snapshot' => $batch->drug->drug_code,
+                'drug_name_snapshot' => $batch->drug->drug_name,
+                'batch_number_snapshot' => $batch->batch_number,
+                'expiry_date_snapshot' => $batch->expiry_date?->toDateString(),
                 'batch' => $batch,
-            ];
-        });
+            ]);
+        }
+
+        return $prepared;
     }
 
-    /**
-     * Validate the selected batch.
-     */
     private function validateBatch(DrugBatch $batch): void
     {
-        if (!$batch->drug) {
-            throw ValidationException::withMessages([
-                'items' => 'A selected batch is not associated with a drug.',
-            ]);
+        if (! $batch->relationLoaded('drug') || $batch->drug === null) {
+            $this->fail(
+                'items',
+                'The drug associated with this batch could not be found.',
+            );
         }
 
-        // if ($batch->expiry_date->isPast()) {
-        //     throw ValidationException::withMessages([
-        //         'items' => sprintf(
-        //             'Drug batch %s has expired and cannot be sold.',
-        //             $batch->batch_number
-        //         ),
-        //     ]);
-        // }
-        if ($batch->expiry_date === null || $batch->expiry_date->lt(today())) {
-            throw ValidationException::withMessages([
-                'items' => sprintf(
-                    'Drug batch %s has expired and cannot be sold.',
-                    $batch->batch_number
-                ),
-            ]);
+        if ($batch->isExpired()) {
+            $this->fail(
+                'items',
+                "Batch {$batch->batch_number} is expired or has no expiry date.",
+            );
         }
 
-        if (!$batch->hasAvailableStock()) {
-            throw ValidationException::withMessages([
-                'items' => sprintf(
-                    'Drug batch %s has no available stock.',
-                    $batch->batch_number
-                ),
-            ]);
+        if (! $batch->hasAvailableStock()) {
+            $this->fail(
+                'items',
+                "Batch {$batch->batch_number} has no available stock.",
+            );
         }
 
-        if (!$batch->drug->is_active) {
-            throw ValidationException::withMessages([
-                'items' => sprintf(
-                    'Drug %s is inactive and cannot be sold.',
-                    $batch->drug->drug_name
-                ),
-            ]);
+        if (! $batch->drug->is_active) {
+            $this->fail(
+                'items',
+                "The drug associated with batch {$batch->batch_number} is inactive.",
+            );
         }
     }
 
     /**
-     * Resolve the selling price from the batch.
+     * Validate payment amounts and require exact payment of the sale total.
      *
-     * Batch price takes priority because different batches
-     * may have different selling prices.
-     */
-    private function resolveSellingPrice(DrugBatch $batch): float
-    {
-        $batchPrice = (float) $batch->selling_price;
-
-        if ($batchPrice < 0) {
-            throw ValidationException::withMessages([
-                'items' => 'The selected batch has an invalid selling price.',
-            ]);
-        }
-
-        return $this->roundMoney($batchPrice);
-    }
-
-    /**
-     * Calculate the subtotal for all sale items.
-     *
-     * @param Collection<int, array<string, mixed>> $items
-     */
-    private function calculateSubtotal(Collection $items): float
-    {
-        return $this->roundMoney(
-            $items->sum(
-                fn(array $item): float => (float) $item['subtotal']
-            )
-        );
-    }
-
-    /**
-     * Calculate the final sale total.
-     */
-    private function calculateTotal(
-        float $subtotal,
-        float $discount,
-        float $tax
-    ): float {
-        $total = $subtotal - $discount + $tax;
-
-        if ($total < 0) {
-            throw ValidationException::withMessages([
-                'total' => 'The sale total cannot be negative.',
-            ]);
-        }
-
-        return $this->roundMoney($total);
-    }
-
-    /**
-     * Validate the discount.
-     */
-    private function validateDiscount(
-        float $discount,
-        float $subtotal
-    ): void {
-        if ($discount > $subtotal) {
-            throw ValidationException::withMessages([
-                'discount' =>
-                'The discount cannot be greater than the subtotal.',
-            ]);
-        }
-    }
-
-    /**
-     * Validate payment totals.
-     *
-     * This implementation requires exact payment matching.
-     * Change handling can be introduced later through a
-     * dedicated cash payment policy.
-     *
-     * @param Collection<int, mixed> $payments
+     * @param Collection<int|string, mixed> $payments
      */
     private function validatePayments(
         Collection $payments,
-        float $total
+        int $totalCents,
     ): void {
-        $paymentTotal = $this->roundMoney(
-            $payments->sum(
-                fn(array $payment): float =>
-                (float) $payment['amount']
-            )
-        );
+        $paymentCents = 0;
 
-        if (abs($paymentTotal - $total) > 0.01) {
-            throw ValidationException::withMessages([
-                'payments' => sprintf(
-                    'Payment total must equal the sale total. Expected: %.2f, received: %.2f.',
-                    $total,
-                    $paymentTotal
+        foreach ($payments as $index => $payment) {
+            $amountCents = $this->moneyToCents(
+                $payment['amount'] ?? null,
+                "payments.{$index}.amount",
+            );
+
+            if ($amountCents <= 0) {
+                $this->fail(
+                    "payments.{$index}.amount",
+                    'Payment amount must be greater than zero.',
+                );
+            }
+
+            if (
+                $amountCents > self::MAX_MONEY_CENTS - $paymentCents
+            ) {
+                $this->fail(
+                    'payments',
+                    'The payment total exceeds the maximum supported amount.',
+                );
+            }
+
+            $paymentCents += $amountCents;
+        }
+
+        if ($paymentCents !== $totalCents) {
+            $this->fail(
+                'payments',
+                sprintf(
+                    'Payment total must equal the sale total. Expected: %s, received: %s.',
+                    $this->centsToMoney($totalCents),
+                    $this->centsToMoney($paymentCents),
                 ),
-            ]);
+            );
         }
     }
 
     /**
-     * Create sale items and decrease inventory.
+     * Deduct inventory and persist each sale item.
      *
      * @param Collection<int, array<string, mixed>> $items
      */
     private function createSaleItems(
         Sale $sale,
         Collection $items,
-        User $user
+        User $user,
     ): void {
         foreach ($items as $item) {
-            /** @var DrugBatch $batch */
-            $batch = $item['batch'];
-
             $this->inventoryService->decrease(
-                drugBatch: $batch,
+                drugBatch: $item['batch'],
                 quantity: $item['quantity'],
                 movementType: StockMovementType::SALE,
                 user: $user,
                 referenceType: Sale::class,
                 referenceId: $sale->id,
-                notes: sprintf(
-                    'Stock deducted for invoice %s.',
-                    $sale->invoice_number
-                ),
+                notes: "Stock deducted for invoice {$sale->invoice_number}.",
             );
 
             $sale->items()->create([
@@ -374,39 +426,43 @@ class SaleService
                 'tax' => $item['tax'],
                 'subtotal' => $item['subtotal'],
                 'total' => $item['total'],
+                'drug_code_snapshot' => $item['drug_code_snapshot'] ?? null,
+                'drug_name_snapshot' => $item['drug_name_snapshot'] ?? null,
+                'batch_number_snapshot' => $item['batch_number_snapshot'] ?? null,
+                'expiry_date_snapshot' => $item['expiry_date_snapshot'] ?? null,
             ]);
         }
     }
 
     /**
-     * Create payment records.
-     *
-     * @param Collection<int, mixed> $payments
+     * @param Collection<int|string, mixed> $payments
      */
     private function createSalePayments(
         Sale $sale,
-        Collection $payments
+        Collection $payments,
     ): void {
-        foreach ($payments as $payment) {
+        foreach ($payments as $index => $payment) {
             $sale->payments()->create([
-                'payment_method' => $payment['payment_method'],
-                'amount' => $this->normalizeMoney($payment['amount']),
+                'payment_method' => trim($payment['payment_method']),
+                'amount' => $this->centsToMoney(
+                    $this->moneyToCents(
+                        $payment['amount'],
+                        "payments.{$index}.amount",
+                    ),
+                ),
                 'reference' => $payment['reference'] ?? null,
                 'notes' => $payment['notes'] ?? null,
             ]);
         }
     }
 
-    /**
-     * Generate a unique invoice number.
-     */
     private function generateInvoiceNumber(): string
     {
         do {
             $invoiceNumber = sprintf(
                 'INV-%s-%s',
                 now()->format('YmdHis'),
-                Str::upper(Str::random(6))
+                Str::upper(Str::random(8)),
             );
         } while (
             Sale::query()
@@ -418,18 +474,91 @@ class SaleService
     }
 
     /**
-     * Normalize a monetary value to two decimal places.
+     * Convert a nonnegative monetary value to integer cents.
+     *
+     * Rejects amounts with more than two decimal places instead of
+     * silently rounding them.
      */
-    private function normalizeMoney(mixed $value): float
+    private function moneyToCents(mixed $value, string $field): int
     {
-        return $this->roundMoney((float) $value);
+        if (
+            ! is_string($value)
+            && ! is_int($value)
+            && ! is_float($value)
+        ) {
+            $this->fail(
+                $field,
+                'Enter a valid nonnegative monetary amount with at most two decimal places.',
+            );
+        }
+
+        if (is_float($value) && ! is_finite($value)) {
+            $this->fail(
+                $field,
+                'Enter a valid nonnegative monetary amount.',
+            );
+        }
+
+        $amount = trim((string) $value);
+
+        if (! preg_match('/\A\d+(?:\.\d{1,2})?\z/', $amount)) {
+            $this->fail(
+                $field,
+                'Enter a valid nonnegative monetary amount with at most two decimal places.',
+            );
+        }
+
+        [$whole, $fraction] = array_pad(
+            explode('.', $amount, 2),
+            2,
+            '0',
+        );
+
+        $whole = ltrim($whole, '0');
+        $whole = $whole === '' ? '0' : $whole;
+        $fraction = str_pad($fraction, 2, '0');
+
+        if (
+            strlen($whole) > 10
+            || (
+                strlen($whole) === 10
+                && strcmp($whole, '9999999999') > 0
+            )
+        ) {
+            $this->fail(
+                $field,
+                'The monetary amount exceeds the maximum supported amount.',
+            );
+        }
+
+        $cents = ((int) $whole * 100) + (int) $fraction;
+
+        if ($cents > self::MAX_MONEY_CENTS) {
+            $this->fail(
+                $field,
+                'The monetary amount exceeds the maximum supported amount.',
+            );
+        }
+
+        return $cents;
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        return sprintf(
+            '%d.%02d',
+            intdiv($cents, 100),
+            $cents % 100,
+        );
     }
 
     /**
-     * Round monetary values consistently.
+     * Centralize validation exceptions for consistent API validation errors.
      */
-    private function roundMoney(float $value): float
+    private function fail(string $field, string $message): never
     {
-        return round($value, 2);
+        throw ValidationException::withMessages([
+            $field => [$message],
+        ]);
     }
 }

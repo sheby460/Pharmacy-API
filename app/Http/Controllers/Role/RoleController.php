@@ -136,7 +136,7 @@ class RoleController extends Controller
     public function assignPermission(AssignRolePermissionsRequest $request, Role $role): JsonResponse {
         abort_unless($role->guard_name === 'web', 404);
 
-        $role->syncPermissions($request->validated('permission'));
+        $role->syncPermissions($request->validated('permissions'));
          
         return response()->json([
             'status' => true,

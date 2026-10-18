@@ -29,15 +29,9 @@ class Sale extends Model
         'discount' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
-        'cancelled_at' => 'datetime',
         'status' => SaleStatus::class,
+        'cancelled_at' => 'datetime',
     ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Relationships
-    |--------------------------------------------------------------------------
-    */
 
     public function customer(): BelongsTo
     {
@@ -49,6 +43,11 @@ class Sale extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(SaleItem::class);
@@ -58,8 +57,14 @@ class Sale extends Model
     {
         return $this->hasMany(SalePayment::class);
     }
-    public function cancelledBy(): BelongsTo
-{
-    return $this->belongsTo(User::class, 'cancelled_by');
-}
+
+    public function isCancelled(): bool
+    {
+        return $this->status === SaleStatus::CANCELLED;
+    }
+
+    public function canBeCancelled(): bool
+    {
+        return $this->status === SaleStatus::COMPLETED;
+    }
 }

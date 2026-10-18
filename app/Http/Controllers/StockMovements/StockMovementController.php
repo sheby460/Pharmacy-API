@@ -23,20 +23,19 @@ class StockMovementController extends Controller
     public function index(
         Request $request
     ): JsonResponse {
-        $perPage = min(
-            max(
-                (int) $request->query('per_page', 15),
-                1
-            ),
-            100
-        );
+        $filters = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:150'],
+            'type' => ['sometimes', 'nullable', Rule::enum(StockMovementType::class)],
+            'drug_id' => ['sometimes', 'nullable', 'integer', 'exists:drugs,id'],
+        ]);
 
-        $search = $request->query('search');
-
-        $type = $request->query('type');
-
-        $drugId = $request->filled('drug_id')
-            ? (int) $request->query('drug_id')
+        $perPage = (int) ($filters['per_page'] ?? 15);
+        $search = $filters['search'] ?? null;
+        $type = $filters['type'] ?? null;
+        $drugId = isset($filters['drug_id'])
+            ? (int) $filters['drug_id']
             : null;
 
         $movements = $this->service->paginate(

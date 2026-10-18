@@ -7,11 +7,6 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class SaleItemResource extends JsonResource
 {
-    /**
-     * Transform the resource into an array.
-     *
-     * @return array<string, mixed>
-     */
     public function toArray(Request $request): array
     {
         return [
@@ -21,23 +16,36 @@ class SaleItemResource extends JsonResource
                 'drug',
                 fn () => $this->drug
                     ? [
-                        'id' => $this->drug->id,
-                        'drug_code' => $this->drug->drug_code,
-                        'drug_name' => $this->drug->drug_name,
+                        'id' => $this->drug_id,
+                        'drug_code' => $this->drug_code_snapshot
+                            ?? $this->drug->drug_code,
+                        'drug_name' => $this->drug_name_snapshot
+                            ?? $this->drug->drug_name,
                     ]
-                    : null
+                    : [
+                        'id' => $this->drug_id,
+                        'drug_code' => $this->drug_code_snapshot,
+                        'drug_name' => $this->drug_name_snapshot,
+                    ]
             ),
 
             'batch' => $this->whenLoaded(
                 'drugBatch',
                 fn () => $this->drugBatch
                     ? [
-                        'id' => $this->drugBatch->id,
-                        'batch_number' => $this->drugBatch->batch_number,
-                        'expiry_date' => $this->drugBatch->expiry_date
+                        'id' => $this->drug_batch_id,
+                        'batch_number' => $this->batch_number_snapshot
+                            ?? $this->drugBatch->batch_number,
+                        'expiry_date' => $this->expiry_date_snapshot
+                            ?->toDateString()
+                            ?? $this->drugBatch->expiry_date?->toDateString(),
+                    ]
+                    : [
+                        'id' => $this->drug_batch_id,
+                        'batch_number' => $this->batch_number_snapshot,
+                        'expiry_date' => $this->expiry_date_snapshot
                             ?->toDateString(),
                     ]
-                    : null
             ),
 
             'quantity' => $this->quantity,

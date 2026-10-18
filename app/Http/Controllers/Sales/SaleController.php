@@ -23,8 +23,7 @@ class SaleController extends Controller
         private readonly SaleService $saleService,
         private readonly SaleQueryService $saleQueryService,
         private readonly SaleCancellationService $saleCancellationService,
-    ) {
-    }
+    ) {}
 
     /**
      * Display a paginated list of sales.
@@ -37,24 +36,21 @@ class SaleController extends Controller
                 'string',
                 'max:100',
             ],
-          'status' => [
-            'nullable', Rule::enum(SaleStatus::class),
-          ],
+            'status' => [
+                'nullable',
+                Rule::enum(SaleStatus::class),
+            ],
 
             'customer_id' => [
                 'nullable',
                 'integer',
                 'exists:customers,id',
             ],
-
-            'date_from' => [
-                'nullable',
-                'date',
-            ],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
 
             'date_to' => [
                 'nullable',
-                'date',
+                'date_format:Y-m-d',
                 'after_or_equal:date_from',
             ],
 

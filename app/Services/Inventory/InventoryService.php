@@ -13,11 +13,10 @@ class InventoryService
 {
     public function __construct(
         private StockMovementService $stockMovementService
-    ) {
-    }
+    ) {}
 
     /**
-     * Increase stock.
+     * Increase available stock and record the movement atomically.
      */
     public function increase(
         DrugBatch $drugBatch,
@@ -28,13 +27,12 @@ class InventoryService
         ?int $referenceId = null,
         ?string $notes = null,
     ): StockMovement {
-        if ($quantity <= 0) {
-            throw ValidationException::withMessages([
-                'quantity' => [
-                    'Stock quantity must be greater than zero.',
-                ],
-            ]);
-        }
+        $this->assertMovementDirection(
+            $movementType,
+            increasing: true,
+        );
+
+        $this->assertPositiveQuantity($quantity);
 
         return DB::transaction(function () use (
             $drugBatch,
@@ -45,20 +43,27 @@ class InventoryService
             $referenceId,
             $notes
         ) {
-            $drugBatch = DrugBatch::query()
+            $lockedBatch = DrugBatch::query()
                 ->lockForUpdate()
                 ->findOrFail($drugBatch->id);
 
-            $before = (int) $drugBatch->quantity_available;
+            $before = (int) $lockedBatch->quantity_available;
+            if ($quantity > PHP_INT_MAX - $before) {
+                throw ValidationException::withMessages([
+                    'quantity' => [
+                        'The resulting stock quantity exceeds the supported range.',
+                    ],
+                ]);
+            }
 
             $after = $before + $quantity;
 
-            $drugBatch->update([
+            $lockedBatch->update([
                 'quantity_available' => $after,
             ]);
 
             return $this->stockMovementService->record(
-                drugBatch: $drugBatch,
+                drugBatch: $lockedBatch,
                 movementType: $movementType,
                 quantity: $quantity,
                 quantityBefore: $before,
@@ -68,11 +73,11 @@ class InventoryService
                 referenceId: $referenceId,
                 notes: $notes,
             );
-        });
+        }, 3);
     }
 
     /**
-     * Decrease stock.
+     * Decrease available stock and record the movement atomically.
      */
     public function decrease(
         DrugBatch $drugBatch,
@@ -83,13 +88,12 @@ class InventoryService
         ?int $referenceId = null,
         ?string $notes = null,
     ): StockMovement {
-        if ($quantity <= 0) {
-            throw ValidationException::withMessages([
-                'quantity' => [
-                    'Stock quantity must be greater than zero.',
-                ],
-            ]);
-        }
+        $this->assertMovementDirection(
+            $movementType,
+            increasing: false,
+        );
+
+        $this->assertPositiveQuantity($quantity);
 
         return DB::transaction(function () use (
             $drugBatch,
@@ -100,11 +104,11 @@ class InventoryService
             $referenceId,
             $notes
         ) {
-            $drugBatch = DrugBatch::query()
+            $lockedBatch = DrugBatch::query()
                 ->lockForUpdate()
                 ->findOrFail($drugBatch->id);
 
-            $before = (int) $drugBatch->quantity_available;
+            $before = (int) $lockedBatch->quantity_available;
 
             if ($quantity > $before) {
                 throw ValidationException::withMessages([
@@ -116,12 +120,12 @@ class InventoryService
 
             $after = $before - $quantity;
 
-            $drugBatch->update([
+            $lockedBatch->update([
                 'quantity_available' => $after,
             ]);
 
             return $this->stockMovementService->record(
-                drugBatch: $drugBatch,
+                drugBatch: $lockedBatch,
                 movementType: $movementType,
                 quantity: $quantity,
                 quantityBefore: $before,
@@ -131,6 +135,60 @@ class InventoryService
                 referenceId: $referenceId,
                 notes: $notes,
             );
-        });
+        }, 3);
+    }
+
+    /**
+     * Validate that a movement type matches the stock direction.
+     */
+    private function assertMovementDirection(
+        StockMovementType $movementType,
+        bool $increasing,
+    ): void {
+        $increasingTypes = [
+            StockMovementType::PURCHASE,
+            StockMovementType::SALE_RETURN,
+            StockMovementType::SALE_CANCELLATION,
+            StockMovementType::ADJUSTMENT_IN,
+        ];
+
+        $decreasingTypes = [
+            StockMovementType::SALE,
+            StockMovementType::PURCHASE_RETURN,
+            StockMovementType::PURCHASE_CANCELLATION,
+            StockMovementType::ADJUSTMENT_OUT,
+            StockMovementType::DAMAGE,
+            StockMovementType::EXPIRED,
+        ];
+
+        $allowedTypes = $increasing
+            ? $increasingTypes
+            : $decreasingTypes;
+
+        if (! in_array($movementType, $allowedTypes, true)) {
+            throw ValidationException::withMessages([
+                'movement_type' => [
+                    sprintf(
+                        'Movement type %s cannot %s available stock.',
+                        $movementType->value,
+                        $increasing ? 'increase' : 'decrease',
+                    ),
+                ],
+            ]);
+        }
+    }
+
+    /**
+     * Validate that stock quantity is a positive whole number.
+     */
+    private function assertPositiveQuantity(int $quantity): void
+    {
+        if ($quantity <= 0) {
+            throw ValidationException::withMessages([
+                'quantity' => [
+                    'Stock quantity must be greater than zero.',
+                ],
+            ]);
+        }
     }
 }

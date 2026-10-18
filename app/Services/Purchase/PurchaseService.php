@@ -171,17 +171,54 @@ class PurchaseService
                     ->lockForUpdate()
                     ->first();
 
-                if ($drugBatch) {
-                    if (
-                        $drugBatch->expiry_date->toDateString()
-                        !== $item->expiry_date->toDateString()
-                    ) {
-                        throw ValidationException::withMessages([
-                            'items' => [
-                                "Batch {$item->batch_number} has a different expiry date.",
-                            ],
-                        ]);
-                    }
+              if ($drugBatch) {
+    if (
+        $drugBatch->expiry_date->toDateString()
+        !== $item->expiry_date->toDateString()
+    ) {
+        throw ValidationException::withMessages([
+            'items' => [
+                "Batch {$item->batch_number} has a different expiry date.",
+            ],
+        ]);
+    }
+
+    if ((int) $drugBatch->supplier_id !== (int) $purchase->supplier_id) {
+        throw ValidationException::withMessages([
+            'items' => [
+                "Batch {$item->batch_number} belongs to a different supplier. "
+                . 'The batch supplier must be reconciled before receiving.',
+            ],
+        ]);
+    }
+
+    if (
+        abs(
+            (float) $drugBatch->purchase_price
+            - (float) $item->purchase_price
+        ) > 0.009
+    ) {
+        throw ValidationException::withMessages([
+            'items' => [
+                "Batch {$item->batch_number} has a different purchase price. "
+                . 'Receiving was rejected to protect batch cost integrity.',
+            ],
+        ]);
+    }
+
+    if (
+        abs(
+            (float) $drugBatch->selling_price
+            - (float) $item->selling_price
+        ) > 0.009
+    ) {
+        throw ValidationException::withMessages([
+            'items' => [
+                "Batch {$item->batch_number} has a different selling price. "
+                . 'Resolve the batch pricing before receiving.',
+            ],
+        ]);
+    }
                 } else {
                     $drugBatch = DrugBatch::query()->create([
                         'drug_id' => $item->drug_id,

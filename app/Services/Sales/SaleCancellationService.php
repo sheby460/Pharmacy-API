@@ -17,22 +17,23 @@ class SaleCancellationService
 {
     public function __construct(
         private readonly InventoryService $inventoryService,
-    ) {}
+    ) {
+    }
 
     /**
-     * Cancel a completed sale.
+     * Cancel a completed sale and restore its stock.
      *
-     * The sale, stock restoration, and stock movements
-     * are processed within a database transaction.
+     * All stock changes, stock movement records, and the sale status
+     * update are committed or rolled back together.
      */
     public function cancel(
         int $saleId,
         User $user,
         string $reason,
     ): Sale {
-        // Validate basic input before starting the transaction.
-        $this->validateSaleId($saleId);
+        $reason = trim($reason);
 
+        $this->validateSaleId($saleId);
         $this->validateCancellationReason($reason);
 
         return DB::transaction(function () use (
@@ -40,40 +41,32 @@ class SaleCancellationService
             $user,
             $reason,
         ): Sale {
-            // Find and lock the sale.
             $sale = $this->findSaleForCancellation($saleId);
 
-            // Check whether the current user can cancel the sale.
             $this->validateCancellationEligibility(
                 sale: $sale,
                 user: $user,
             );
 
-            // Load and lock the sale items.
             $items = $this->loadSaleItemsForCancellation($sale);
 
-            // Restore stock for all sale items.
             $this->restoreInventory(
                 sale: $sale,
                 items: $items,
                 user: $user,
+                reason: $reason,
             );
 
-            // Update the sale cancellation details.
             $this->markSaleAsCancelled(
                 sale: $sale,
                 user: $user,
                 reason: $reason,
             );
 
-            // Return the cancelled sale with its relationships.
             return $this->loadCancelledSale($sale);
-        });
+        }, 3);
     }
 
-    /**
-     * Validate the sale ID before processing cancellation.
-     */
     private function validateSaleId(int $saleId): void
     {
         if ($saleId <= 0) {
@@ -85,68 +78,41 @@ class SaleCancellationService
         }
     }
 
-    /**
-     * Find and lock the sale for cancellation.
-     */
     private function findSaleForCancellation(int $saleId): Sale
     {
-        $sale = Sale::query()
+        return Sale::query()
             ->lockForUpdate()
-            ->find($saleId);
-
-        if (!$sale) {
-            throw ValidationException::withMessages([
-                'sale' => [
-                    'The selected sale was not found.',
-                ],
-            ]);
-        }
-
-        return $sale;
+            ->findOrFail($saleId);
     }
 
-    /**
-     * Validate the sale's cancellation eligibility.
-     */
     private function validateCancellationEligibility(
         Sale $sale,
         User $user,
     ): void {
         if ($sale->status === SaleStatus::CANCELLED) {
             throw ValidationException::withMessages([
-                'sale' => [
-                    'This sale has already been cancelled.',
-                ],
+                'sale' => ['This sale has already been cancelled.'],
             ]);
         }
 
         if ($sale->status !== SaleStatus::COMPLETED) {
             throw ValidationException::withMessages([
-                'sale' => [
-                    'Only completed sales can be cancelled.',
-                ],
+                'sale' => ['Only completed sales can be cancelled.'],
             ]);
         }
 
-        if (!$user->can('cancel', $sale)) {
+        if (! $user->can('cancel', $sale)) {
             throw new AuthorizationException(
                 'You are not authorized to cancel this sale.',
             );
         }
     }
 
-    /**
-     * Validate the cancellation reason.
-     */
     private function validateCancellationReason(string $reason): void
     {
-        $reason = trim($reason);
-
         if ($reason === '') {
             throw ValidationException::withMessages([
-                'reason' => [
-                    'A cancellation reason is required.',
-                ],
+                'reason' => ['A cancellation reason is required.'],
             ]);
         }
 
@@ -168,10 +134,7 @@ class SaleCancellationService
     }
 
     /**
-     * Load sale items for cancellation.
-     *
-     * Sale items are locked to prevent concurrent
-     * operations against the same records.
+     * Lock sale items in a stable order before locking their batches.
      *
      * @return EloquentCollection<int, SaleItem>
      */
@@ -180,7 +143,8 @@ class SaleCancellationService
     ): EloquentCollection {
         $items = SaleItem::query()
             ->where('sale_id', $sale->id)
-            ->with('drug')
+            ->orderBy('drug_batch_id')
+            ->orderBy('id')
             ->lockForUpdate()
             ->get();
 
@@ -196,9 +160,7 @@ class SaleCancellationService
     }
 
     /**
-     * Restore stock for each sale item.
-     *
-     * Cancellation is recorded separately from a customer return.
+     * Restore the exact quantities sold and record the reason.
      *
      * @param EloquentCollection<int, SaleItem> $items
      */
@@ -206,13 +168,25 @@ class SaleCancellationService
         Sale $sale,
         EloquentCollection $items,
         User $user,
+        string $reason,
     ): void {
         foreach ($items as $item) {
+            if ((int) $item->quantity <= 0) {
+                throw ValidationException::withMessages([
+                    'items' => [
+                        sprintf(
+                            'Sale item %d has an invalid quantity.',
+                            $item->id,
+                        ),
+                    ],
+                ]);
+            }
+
             $drugBatch = $item->drugBatch()
                 ->lockForUpdate()
                 ->first();
 
-            if (!$drugBatch) {
+            if ($drugBatch === null) {
                 throw ValidationException::withMessages([
                     'items' => [
                         sprintf(
@@ -231,16 +205,14 @@ class SaleCancellationService
                 referenceType: Sale::class,
                 referenceId: $sale->id,
                 notes: sprintf(
-                    'Stock restored after cancellation of invoice %s.',
+                    'Stock restored for cancelled invoice %s. Reason: %s',
                     $sale->invoice_number,
+                    $reason,
                 ),
             );
         }
     }
 
-    /**
-     * Update the sale cancellation details.
-     */
     private function markSaleAsCancelled(
         Sale $sale,
         User $user,
@@ -250,13 +222,10 @@ class SaleCancellationService
             'status' => SaleStatus::CANCELLED,
             'cancelled_at' => now(),
             'cancelled_by' => $user->id,
-            'cancellation_reason' => trim($reason),
+            'cancellation_reason' => $reason,
         ]);
     }
 
-    /**
-     * Load the cancelled sale and relationships.
-     */
     private function loadCancelledSale(Sale $sale): Sale
     {
         return $sale->refresh()->load([

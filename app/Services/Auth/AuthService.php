@@ -61,7 +61,9 @@ class AuthService
             'password' => $data['password'],
         ];
 
-        if (!Auth::guard('web')->attempt($credentials)) {
+        // Include the active flag in the credential lookup so suspended
+        // accounts cannot receive new API tokens.
+        if (!Auth::guard('web')->attempt($credentials + ['is_active' => true])) {
             return [
                 'status' => false,
                 'message' => 'Invalid username or password.',

@@ -56,6 +56,21 @@ class StockMovementQueryService
             ]);
         }
 
+        if (
+            in_array(
+                $movementType,
+                [StockMovementType::DAMAGE, StockMovementType::EXPIRED],
+                true
+            )
+            && trim((string) $notes) === ''
+        ) {
+            throw ValidationException::withMessages([
+                'notes' => [
+                    'A reason is required when recording damaged or expired stock.',
+                ],
+            ]);
+        }
+
         $drugBatch = DrugBatch::query()
             ->findOrFail($drugBatchId);
 

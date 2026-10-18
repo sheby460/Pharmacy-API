@@ -98,6 +98,7 @@ class RolePermissionSeeder extends Seeder
             'sales.approve-cancellation',
             'sales.refund',
             'sales.print-receipt',
+            'sales.process-returns',
 
             // Reports
             'reports.view',
